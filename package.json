@@ -1,7 +1,7 @@
 {
-  "name": "@workstudio/integrations",
+  "name": "@workstudio/sdk",
   "version": "0.1.0",
-  "description": "Headless TypeScript SDK for the WorkStudio embeddable integration marketplace. Framework-agnostic \u2014 build your own UI on top of it.",
+  "description": "Official JavaScript/TypeScript SDK for Workstudio. Headless and framework-agnostic. Covers the embeddable integration marketplace today; the surface will grow to the rest of the API.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -32,11 +32,11 @@
   },
   "keywords": [
     "workstudio",
-    "integrations",
-    "marketplace",
-    "embed",
     "sdk",
-    "headless"
+    "integrations",
+    "connectors",
+    "automation",
+    "workflow"
   ],
   "devDependencies": {
     "tsup": "^8.0.0",

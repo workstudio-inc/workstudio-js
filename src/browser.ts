@@ -1,8 +1,8 @@
 /**
  * Browser-only helpers (OAuth popup handling).
  *
- * Import from `@workstudio/integrations/browser`. These use `window`/`postMessage` and must run in
- * a browser. The core client (`@workstudio/integrations`) stays isomorphic.
+ * Import from `@workstudio/sdk/browser`. These use `window`/`postMessage` and must run in
+ * a browser. The core client (`@workstudio/sdk`) stays isomorphic.
  */
 import type { IntegrationsClient } from './client.js';
 import type { Activation, InitiateOAuthOptions } from './types.js';

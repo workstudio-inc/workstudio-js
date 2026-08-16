@@ -1,5 +1,5 @@
 # ==============================================================================
-# Publish @workstudio/integrations to npm
+# Publish @workstudio/sdk to npm
 # ==============================================================================
 # Triggered by pushing a tag, so a release is a reviewable git object rather than
 # whatever happened to be on someone's laptop:
