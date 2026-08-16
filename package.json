@@ -1,0 +1,58 @@
+{
+  "name": "@workstudio/integrations",
+  "version": "0.1.0",
+  "description": "Headless TypeScript SDK for the WorkStudio embeddable integration marketplace. Framework-agnostic \u2014 build your own UI on top of it.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "require": "./dist/browser.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "workstudio",
+    "integrations",
+    "marketplace",
+    "embed",
+    "sdk",
+    "headless"
+  ],
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/workstudio-inc/sdks.git",
+    "directory": "js"
+  },
+  "homepage": "https://docs.work.studio",
+  "bugs": {
+    "url": "https://github.com/workstudio-inc/sdks/issues"
+  },
+  "author": "Workstudio Inc <developers@work.studio>"
+}

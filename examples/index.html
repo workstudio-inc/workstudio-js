@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WorkStudio Integrations — Headless SDK Demo</title>
+  <style>
+    :root { --bg:#0f172a; --card:#1e293b; --border:#334155; --text:#e2e8f0; --muted:#94a3b8; --primary:#6366f1; --green:#22c55e; --yellow:#eab308; --red:#ef4444; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+    header { padding:20px 24px; border-bottom:1px solid var(--border); }
+    header h1 { margin:0; font-size:18px; }
+    header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+    main { max-width:1000px; margin:0 auto; padding:24px; }
+    .panel { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:20px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+    input { width:100%; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; }
+    button { cursor:pointer; border:none; border-radius:6px; padding:8px 14px; font-size:13px; font-weight:600; }
+    .btn-primary { background:var(--primary); color:#fff; }
+    .btn-outline { background:transparent; border:1px solid var(--border); color:var(--text); }
+    .btn-danger { background:transparent; border:1px solid var(--red); color:var(--red); }
+    .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; margin-top:16px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+    .card h3 { margin:0 0 2px; font-size:15px; }
+    .card .cat { color:var(--muted); font-size:12px; margin-bottom:10px; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+    .badge { font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; color:#fff; display:inline-flex; align-items:center; gap:4px; }
+    .dot { width:8px; height:8px; border-radius:999px; display:inline-block; }
+    .muted { color:var(--muted); font-size:12px; }
+    .conns { margin-top:10px; font-size:12px; }
+    .conn { display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-top:1px dashed var(--border); }
+    .err { color:var(--red); font-size:13px; margin-top:8px; }
+    code { background:var(--bg); padding:1px 5px; border-radius:4px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Headless SDK Demo — <code>@workstudio/integrations</code></h1>
+    <p>This page renders the integration marketplace entirely from the SDK. Nothing here is WorkStudio UI code — it's what any team could build.</p>
+  </header>
+
+  <main>
+    <div class="panel">
+      <div class="grid">
+        <div><label>API base URL</label><input id="baseUrl" value="https://api.work.studio" /></div>
+        <div><label>Tenant ID</label><input id="tenantId" placeholder="a8737fb0-…" /></div>
+        <div><label>API key (svx_ik_…)</label><input id="apiKey" placeholder="svx_ik_…" /></div>
+        <div><label>Scope key</label><input id="scopeKey" value="customer:test" /></div>
+      </div>
+      <div style="margin-top:14px; display:flex; gap:8px;">
+        <button class="btn-primary" id="load">Load catalog</button>
+        <span class="muted" id="status" style="align-self:center;"></span>
+      </div>
+      <div class="err" id="error"></div>
+    </div>
+
+    <div class="cards" id="cards"></div>
+  </main>
+
+  <script type="module">
+    import { IntegrationsClient } from '../dist/index.js';
+    import { connectConnector } from '../dist/browser.js';
+
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $('status');
+    const errorEl = $('error');
+    const cardsEl = $('cards');
+    let client = null;
+    let activationsByIntegration = new Map();
+
+    function buildClient() {
+      return new IntegrationsClient({
+        baseUrl: $('baseUrl').value.trim(),
+        tenantId: $('tenantId').value.trim() || undefined,
+        apiKey: $('apiKey').value.trim() || undefined,
+        scopeKey: $('scopeKey').value.trim() || undefined,
+      });
+    }
+
+    function statusMeta(status) {
+      switch (status) {
+        case 'active':   return { color: 'var(--green)',  label: 'Active' };
+        case 'pending':  return { color: 'var(--yellow)', label: 'Setup needed' };
+        case 'failed':   return { color: 'var(--red)',    label: 'Failed' };
+        case 'disabled': return { color: 'var(--muted)',  label: 'Inactive' };
+        default:         return { color: 'var(--muted)',  label: status || '—' };
+      }
+    }
+
+    function connectorDot(activation, total) {
+      const connected = (activation?.connectors ?? []).filter(c => c.status === 'connected').length;
+      const pending = (activation?.pendingRequirements ?? []).length;
+      const all = total > 0 ? connected >= total && pending === 0 : connected > 0;
+      const color = all ? 'var(--green)' : connected > 0 ? 'var(--yellow)' : 'var(--muted)';
+      const label = total > 0 ? `${connected}/${total} connected` : `${connected} connected`;
+      return `<span class="dot" style="background:${color}"></span> ${label}` + (pending ? ` · ${pending} need setup` : '');
+    }
+
+    async function refreshActivations() {
+      activationsByIntegration = new Map();
+      try {
+        const list = await client.listActivations();
+        for (const a of list) activationsByIntegration.set(a.integrationGlobalId, a);
+      } catch (e) { /* scope may have no activations yet */ }
+    }
+
+    function render(catalog) {
+      cardsEl.innerHTML = '';
+      for (const integ of catalog.integrations) {
+        const activation = activationsByIntegration.get(integ.globalId);
+        const meta = activation ? statusMeta(activation.status) : null;
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <h3>${integ.name}</h3>
+          <div class="cat">${integ.category ?? ''} · v${integ.version ?? ''}</div>
+          <div class="muted">${integ.shortDescription ?? integ.description ?? ''}</div>
+          <div class="conns">${connectorDot(activation, integ.connectorCount)}</div>
+          <div class="row">
+            ${meta ? `<span class="badge" style="background:${meta.color}">${meta.label}</span>` : '<span class="muted">Not activated</span>'}
+            <span data-actions></span>
+          </div>
+          <div data-connectors></div>
+        `;
+        const actions = card.querySelector('[data-actions]');
+        if (!activation) {
+          actions.appendChild(mkBtn('Activate', 'btn-primary', () => doActivate(integ)));
+        } else if (activation.status === 'disabled' || activation.status === 'failed') {
+          actions.appendChild(mkBtn(activation.status === 'failed' ? 'Retry' : 'Activate', 'btn-primary', () => doActivate(integ)));
+        } else {
+          actions.appendChild(mkBtn('Deactivate', 'btn-danger', () => doDeactivate(activation)));
+        }
+
+        // Per-connector connect/disconnect from live requirements + connectors.
+        if (activation) {
+          const wrap = card.querySelector('[data-connectors]');
+          for (const req of activation.pendingRequirements ?? []) {
+            const line = document.createElement('div');
+            line.className = 'conn';
+            line.innerHTML = `<span>${req.connectorName ?? req.connectorGlobalId}</span>`;
+            line.appendChild(mkBtn('Connect', 'btn-outline', () => doConnect(activation, req.connectorGlobalId)));
+            wrap.appendChild(line);
+          }
+          for (const c of activation.connectors ?? []) {
+            const line = document.createElement('div');
+            line.className = 'conn';
+            line.innerHTML = `<span>${c.connectorName ?? c.connectorGlobalId} <span class="muted">(${c.status})</span></span>`;
+            line.appendChild(mkBtn('Disconnect', 'btn-danger', () => doDisconnect(activation, c.connectorGlobalId)));
+            wrap.appendChild(line);
+          }
+        }
+        cardsEl.appendChild(card);
+      }
+    }
+
+    function mkBtn(text, cls, onClick) {
+      const b = document.createElement('button');
+      b.textContent = text; b.className = cls;
+      b.onclick = async () => { b.disabled = true; try { await onClick(); } catch (e) { showError(e); } finally { b.disabled = false; } };
+      return b;
+    }
+
+    let lastCatalog = null;
+    async function reload() {
+      await refreshActivations();
+      if (lastCatalog) render(lastCatalog);
+    }
+
+    async function doActivate(integ) { await client.activate(integ.globalId); await reload(); }
+    async function doDeactivate(a) { await client.deactivate(a.id); await reload(); }
+    async function doDisconnect(a, connectorGlobalId) { await client.disconnectConnection(a.id, connectorGlobalId); await reload(); }
+    async function doConnect(a, connectorGlobalId) { await connectConnector(client, a.id, connectorGlobalId); await reload(); }
+
+    function showError(e) {
+      errorEl.textContent = (e && e.message) ? `${e.message}${e.status ? ' (HTTP ' + e.status + ')' : ''}` : String(e);
+    }
+
+    $('load').onclick = async () => {
+      errorEl.textContent = '';
+      statusEl.textContent = 'Loading…';
+      try {
+        client = buildClient();
+        lastCatalog = await client.listIntegrations();
+        await refreshActivations();
+        render(lastCatalog);
+        statusEl.textContent = `${lastCatalog.totalCount} integration(s)`;
+      } catch (e) {
+        statusEl.textContent = '';
+        showError(e);
+      }
+    };
+  </script>
+</body>
+</html>
