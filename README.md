@@ -1,11 +1,11 @@
-# @workstudio/sdk
+# @workstudio-inc/sdk
 
 Headless TypeScript SDK for the **WorkStudio embeddable integration marketplace**.
 
 It wraps the `/embed` API with typed methods and carries **no UI** — build the catalog, activation, and connection experience however you want (React, Vue, Svelte, plain DOM). Your product team owns the pixels; the SDK owns the protocol.
 
 ```
-npm install @workstudio/sdk
+npm install @workstudio-inc/sdk
 ```
 
 ---
@@ -13,7 +13,7 @@ npm install @workstudio/sdk
 ## Quick start
 
 ```ts
-import { IntegrationsClient } from '@workstudio/sdk';
+import { IntegrationsClient } from '@workstudio-inc/sdk';
 
 const client = new IntegrationsClient({
   apiKey: process.env.WS_EMBED_KEY,   // svx_ik_...  (server-side secret)
@@ -123,7 +123,7 @@ render(`${connected}/${total} connected`);
 The browser entry point adds a popup-based OAuth helper so a "Connect" button is one call:
 
 ```ts
-import { connectConnector } from '@workstudio/sdk/browser';
+import { connectConnector } from '@workstudio-inc/sdk/browser';
 
 async function onConnectClick(activationId: string, connectorGlobalId: string) {
   const updated = await connectConnector(client, activationId, connectorGlobalId);
@@ -134,7 +134,7 @@ async function onConnectClick(activationId: string, connectorGlobalId: string) {
 Prefer to drive the flow yourself? Use the primitives:
 
 ```ts
-import { openOAuthPopup } from '@workstudio/sdk/browser';
+import { openOAuthPopup } from '@workstudio-inc/sdk/browser';
 
 const { authorizationUrl } = await client.initiateOAuth(activationId, connectorGlobalId);
 await openOAuthPopup(authorizationUrl);
@@ -149,7 +149,7 @@ The SDK ships no React dependency — a hook is a few lines on top of it:
 
 ```tsx
 import { useEffect, useState, useMemo } from 'react';
-import { IntegrationsClient, type Catalog } from '@workstudio/sdk';
+import { IntegrationsClient, type Catalog } from '@workstudio-inc/sdk';
 
 export function useCatalog(config) {
   const client = useMemo(() => new IntegrationsClient(config), [config]);
@@ -189,7 +189,7 @@ If your gateway routes the embed API under a different prefix, override `basePat
 ## Error handling
 
 ```ts
-import { IntegrationsApiError } from '@workstudio/sdk';
+import { IntegrationsApiError } from '@workstudio-inc/sdk';
 
 try {
   await client.activate('servicenow');

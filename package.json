@@ -1,5 +1,5 @@
 {
-  "name": "@workstudio/sdk",
+  "name": "@workstudio-inc/sdk",
   "version": "0.1.0",
   "description": "Official JavaScript/TypeScript SDK for Workstudio. Headless and framework-agnostic. Covers the embeddable integration marketplace today; the surface will grow to the rest of the API.",
   "license": "MIT",

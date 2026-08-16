@@ -1,5 +1,5 @@
 # ==============================================================================
-# Publish @workstudio/sdk to npm
+# Publish @workstudio-inc/sdk to npm
 # ==============================================================================
 # Triggered by pushing a tag, so a release is a reviewable git object rather than
 # whatever happened to be on someone's laptop:
@@ -7,9 +7,14 @@
 #   npm version patch     # or minor / major — commits and tags
 #   git push --follow-tags
 #
-# Requires an NPM_TOKEN secret (an npm automation token with publish rights on
-# the @workstudio scope). It is not configured yet; the guard below fails with a
-# clear message rather than a confusing 401 from the registry.
+# Authentication prefers npm Trusted Publishing (OIDC): no long-lived token, and
+# it sidesteps npm's restriction on 2FA-bypassing tokens (account changes Aug 2026,
+# direct publishing Jan 2027). Requires npm CLI >= 11.5.1, which the setup step pins.
+#
+# Bootstrap caveat: unlike PyPI, npm cannot configure a trusted publisher for a
+# package that does not exist yet. So the FIRST publish needs either a one-off
+# `npm publish` from a 2FA'd local session, or an NPM_TOKEN. After that, configure
+# the trusted publisher at npmjs.com and delete the token.
 #
 # Publishing is close to irreversible: npm's unpublish window is 72 hours and the
 # name stays burned afterwards. The version check below refuses to republish a
@@ -38,16 +43,11 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Check the publish token exists
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # OIDC needs a recent npm; the runner's bundled version may predate it.
+      - name: Use an npm that supports trusted publishing
         run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "::error::NPM_TOKEN is not set. Add an npm automation token with"
-            echo "::error::publish rights on the @workstudio scope as an org or repo secret."
-            exit 1
-          fi
-          echo "Token present."
+          npm install -g npm@latest
+          npm --version
 
       - name: Install
         run: npm ci
@@ -77,6 +77,9 @@ jobs:
           fi
           echo "$NAME@$VER is new."
 
+      # No NODE_AUTH_TOKEN when trusted publishing is configured — npm exchanges the
+      # OIDC token itself. The env line stays so the very first (bootstrap) publish
+      # can still use a token; it is simply empty once the token is deleted.
       - name: Publish
         run: npm publish --access public --provenance
         env:

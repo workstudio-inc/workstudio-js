@@ -1,7 +1,7 @@
 # Headless SDK demo
 
 A single self-contained page that renders the integration marketplace using only
-`@workstudio/sdk` — no framework, no WorkStudio UI code. Use it to test the SDK and the
+`@workstudio-inc/sdk` — no framework, no WorkStudio UI code. Use it to test the SDK and the
 embed API end to end.
 
 ## Run it
