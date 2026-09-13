@@ -194,3 +194,48 @@ export interface SessionToken {
   /** The customer scope the token is bound to. */
   scopeKey: string;
 }
+
+// =============================================================================
+// Connector operations (call a connector through the customer's own connection)
+// =============================================================================
+
+/** One operation a connector exposes, e.g. ServiceNow "create_incident". */
+export interface ConnectorOperation {
+  /** Stable operation id. */
+  id: string;
+  /** Operation name, the value to pass to `execute`. */
+  name: string;
+  summary?: string;
+  description?: string;
+  /** JSON Schema of the operation's input, when the connector declares one. */
+  inputSchema?: Record<string, unknown>;
+  /** JSON Schema of the operation's output, when the connector declares one. */
+  outputSchema?: Record<string, unknown>;
+}
+
+/** Options for `execute`. */
+export interface ExecuteOptions {
+  /** Customer scope override, e.g. "customer:acme". Defaults to the client's scope. */
+  scopeKey?: string;
+}
+
+/**
+ * The result of calling a connector operation.
+ *
+ * `ok` reflects the upstream system's answer, not the platform's: a 404 from ServiceNow is
+ * `ok: false, status: 404` with the upstream body in `data`, and does not throw. Platform-side
+ * failures (no connection for this customer, unknown operation, missing permission) throw
+ * `IntegrationsApiError`.
+ */
+export interface ExecuteResult<T = unknown> {
+  operation: string;
+  ok: boolean;
+  /** HTTP status the upstream system returned. */
+  status: number;
+  /** The upstream response body. */
+  data: T;
+  /** Upstream error message, when the call did not succeed. */
+  error?: string;
+  /** Round-trip time in milliseconds, as measured by the platform. */
+  durationMs?: number;
+}

@@ -206,6 +206,53 @@ export class IntegrationsClient {
   }
 
   // ===========================================================================
+  // Connector operations
+  // ===========================================================================
+
+  /**
+   * List the operations a connector exposes, with their input schemas, so you can discover what
+   * `execute` accepts.
+   */
+  listOperations(connectorGlobalId: string): Promise<import('./types.js').ConnectorOperation[]> {
+    return this.request<import('./types.js').ConnectorOperation[]>(
+      'GET',
+      `/connectors/${encodeURIComponent(connectorGlobalId)}/operations`,
+    );
+  }
+
+  /**
+   * Call one connector operation using the current customer's own connection.
+   *
+   * The customer must have connected the connector first (through the catalog, an activation, or
+   * OAuth). Credentials never leave the platform: your app sends the input and receives the
+   * upstream answer. The call is pinned to the client's customer scope, so it can only ever use
+   * that customer's connection.
+   *
+   * @example
+   * ```ts
+   * const res = await client.execute('<servicenow-connector-id>', 'create_incident', {
+   *   short_description: 'Disk full on web-01',
+   *   urgency: '2',
+   * });
+   * if (res.ok) console.log(res.data);
+   * ```
+   */
+  execute<T = unknown>(
+    connectorGlobalId: string,
+    operation: string,
+    input?: Record<string, unknown>,
+    options?: import('./types.js').ExecuteOptions,
+  ): Promise<import('./types.js').ExecuteResult<T>> {
+    return this.request<import('./types.js').ExecuteResult<T>>(
+      'POST',
+      // The operation travels in the body: names like GitHub's "repos/list-for-authenticated-user"
+      // carry slashes that do not survive as a path segment.
+      `/connectors/${encodeURIComponent(connectorGlobalId)}/execute`,
+      { body: { operation, input: input ?? {} }, scopeKey: options?.scopeKey },
+    );
+  }
+
+  // ===========================================================================
   // Session tokens (secure browser-embed auth)
   // ===========================================================================
 
