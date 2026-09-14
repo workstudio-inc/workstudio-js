@@ -239,3 +239,49 @@ export interface ExecuteResult<T = unknown> {
   /** Round-trip time in milliseconds, as measured by the platform. */
   durationMs?: number;
 }
+
+/** Whether a customer has connected a connector. */
+export type ConnectionStatus = 'CONNECTED' | 'NEEDS_RECONNECT' | 'NOT_CONNECTED';
+
+/** One connector on a customer's Connections list. */
+export interface Connection {
+  connectorGlobalId: string;
+  name: string;
+  description?: string | null;
+  logoUrl?: string | null;
+  category?: string | null;
+  /** oauth2, api_key, basic or none. */
+  authType?: string | null;
+  status: ConnectionStatus;
+  connectedAt?: string | null;
+  /** Names of your Apps that use this connector. */
+  usedBy?: string[];
+}
+
+/** A customer's AI assistant access. Never carries the key. */
+export interface McpAccess {
+  /** You allow assistant access (Designer, embed settings). */
+  enabled: boolean;
+  /** This customer has a live MCP URL. */
+  active: boolean;
+  keyPrefix?: string | null;
+  createdAt?: string | null;
+  lastUsedAt?: string | null;
+  /** The endpoint a key is appended to. */
+  endpoint?: string | null;
+}
+
+/** The result of `listConnections`. */
+export interface ConnectionsList {
+  connectors: Connection[];
+  mcp?: McpAccess;
+}
+
+/** A newly created MCP URL. `url` includes the key and is returned only once. */
+export interface McpUrl {
+  url: string;
+  key: string;
+  endpoint: string;
+  keyPrefix: string;
+  createdAt?: string;
+}

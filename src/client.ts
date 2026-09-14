@@ -253,6 +253,54 @@ export class IntegrationsClient {
   }
 
   // ===========================================================================
+  // Connections
+  // ===========================================================================
+
+  /**
+   * The connectors this customer is offered, whether each is connected, and the customer's AI
+   * assistant (MCP) access. Offered means the list you set in Designer, or every connector your
+   * published Apps need.
+   */
+  listConnections(): Promise<import('./types.js').ConnectionsList> {
+    return this.request<import('./types.js').ConnectionsList>('GET', '/connections');
+  }
+
+  /**
+   * Disconnect the customer from a connector: the credentials they entered are deleted and their
+   * OAuth grants revoked. Automations that use it stop working for this customer until they connect
+   * again.
+   */
+  disconnect(connectorGlobalId: string): Promise<{ connectorGlobalId: string; removed: number }> {
+    return this.request<{ connectorGlobalId: string; removed: number }>(
+      'DELETE',
+      `/connectors/${encodeURIComponent(connectorGlobalId)}/connection`,
+    );
+  }
+
+  // ===========================================================================
+  // AI assistant access (MCP)
+  // ===========================================================================
+
+  /** Whether assistant access is on for your customers, and whether this customer has a live URL. */
+  getMcpAccess(): Promise<import('./types.js').McpAccess> {
+    return this.request<import('./types.js').McpAccess>('GET', '/mcp-key');
+  }
+
+  /**
+   * Create this customer's MCP URL, replacing any they had. The URL carries the key and is returned
+   * only here: the customer pastes it into Claude, ChatGPT or Cursor, and the assistant can then use
+   * their own connections as tools, and nothing else.
+   */
+  createMcpUrl(): Promise<import('./types.js').McpUrl> {
+    return this.request<import('./types.js').McpUrl>('POST', '/mcp-key', { body: {} });
+  }
+
+  /** Turn the customer's MCP URL off. It stops working on the assistant's next call. */
+  revokeMcpUrl(): Promise<void> {
+    return this.request<void>('DELETE', '/mcp-key');
+  }
+
+  // ===========================================================================
   // Session tokens (secure browser-embed auth)
   // ===========================================================================
 

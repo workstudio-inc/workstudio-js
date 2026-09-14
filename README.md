@@ -101,6 +101,19 @@ client.disconnectConnection(activationId, connectorGlobalId): Promise<Activation
 // OAuth
 client.initiateOAuth(activationId, connectorGlobalId, { redirectUri?, state? }): Promise<OAuthInitResult>
 client.completeOAuth({ code, state, activationId?, connectorGlobalId?, connectionInstanceId? }): Promise<OAuthCallbackResult>
+
+// The customer's connections, independent of any App
+client.listConnections(): Promise<ConnectionsList>          // offered connectors + status + MCP access
+client.disconnect(connectorGlobalId): Promise<{ removed }>
+
+// Call a connector with the customer's own connection
+client.listOperations(connectorGlobalId): Promise<ConnectorOperation[]>
+client.execute(connectorGlobalId, operation, input?): Promise<ExecuteResult>
+
+// The customer's AI assistant (MCP)
+client.getMcpAccess(): Promise<McpAccess>
+client.createMcpUrl(): Promise<McpUrl>                      // url is returned once
+client.revokeMcpUrl(): Promise<void>
 ```
 
 ### Activation & connector state
@@ -140,6 +153,23 @@ const { authorizationUrl } = await client.initiateOAuth(activationId, connectorG
 await openOAuthPopup(authorizationUrl);
 const activation = await client.getActivation(activationId);
 ```
+
+---
+
+## Your customer's AI assistant
+
+A customer who has connected their systems can use them from Claude, ChatGPT or Cursor. Create a
+private MCP URL for them and show it once; the assistant then sees their connections as tools, with
+their own credentials, and nothing of anyone else's.
+
+```ts
+const { url } = await client.createMcpUrl();   // show this to the customer, once
+// later
+await client.revokeMcpUrl();                   // the URL stops working immediately
+```
+
+The embedded catalog's Connections tab does this for you ("Use with AI assistants"). Turn it off for
+every customer in Designer → Marketplace → Embed.
 
 ---
 
