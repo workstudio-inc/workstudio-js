@@ -47,12 +47,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/workstudio-inc/sdks.git",
-    "directory": "js"
+    "url": "git+https://github.com/workstudio-inc/workstudio-js.git"
   },
   "homepage": "https://docs.work.studio",
   "bugs": {
-    "url": "https://github.com/workstudio-inc/sdks/issues"
+    "url": "https://github.com/workstudio-inc/workstudio-js/issues"
   },
   "author": "Workstudio Inc <developers@work.studio>"
 }
