@@ -233,6 +233,60 @@ try {
 
 ---
 
+## Apps people use directly (`@workstudio-inc/sdk/app`)
+
+For an App whose users sign in themselves - a web app, or a phone app in a web view. Every call is
+made as the signed-in person, and the platform keeps each person to their own install of the App:
+their projects, conversations, data and files, and nobody else's.
+
+```ts
+import { createApp, AllowanceUsed, SignInRequired } from '@workstudio-inc/sdk/app';
+
+const app = createApp({
+  apiUrl: 'https://api.work.studio',
+  signInIssuer: 'https://auth.work.studio/realms/apps',
+  clientId: 'crava-web-01a14509',     // shown in the App's "Direct use" settings
+});
+
+// Sign in on the hosted page (Google, Apple or email), then finish when it sends the person back.
+await app.auth.completeSignIn();      // at start-up; a no-op unless returning from sign-in
+if (!(await app.auth.signedIn())) await app.auth.signIn({ method: 'google' });
+
+// Their own projects
+const project = await app.projects.create({ name: 'Kitchen side table' });
+
+// A conversation with one of the App's agents. A project has one: starting again picks it up.
+const chat = await app.chat.start({ agentId: DESIGNER_AGENT, projectId: project.id });
+const reply = await chat.send('A walnut side table, 50cm square, with a lower shelf', {
+  onText: piece => render(piece),
+  attachments: [photo],               // photos or PDFs, optional
+});
+await app.chat.list({ projectId: project.id });
+await app.chat.rename(chat.id, 'Side table');
+
+// Records in a collection the App declares - only this person's
+const designs = app.data.collection<{ title: string; status: string }>('crava_designs');
+const saved = await designs.create({ title: 'Side table', status: 'draft' });
+await designs.update(saved.id, { status: 'checked' });     // merges; replace() replaces
+
+// Their files
+const file = await app.files.upload(photo);
+
+// App stores require account deletion inside the app
+await app.account.delete();
+```
+
+- **Phone apps**: pass `openUrl` (e.g. Capacitor's `Browser.open`) and `redirectUri` (your app's
+  scheme), and call `completeSignIn(url)` with the deep link. Pass `storage` to keep the sign-in in
+  secure storage.
+- **Servers** acting for a signed-in person: pass `platformToken: () => token` instead of the sign-in
+  settings.
+- **Errors**: `SignInRequired` (sign in again), `AllowanceUsed` (this month's AI allowance is spent),
+  and `AppError` with `status` and a `message` fit to show.
+- **What the App sets up on the platform**: its agents (bundled with the App), its data collections
+  (`dataCollections` in its end-user access), the monthly AI allowance per person, sign-in methods
+  and branding.
+
 ## Build
 
 ```

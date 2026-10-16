@@ -1,7 +1,7 @@
 {
   "name": "@workstudio-inc/sdk",
-  "version": "0.2.0",
-  "description": "Official JavaScript/TypeScript SDK for Workstudio. Headless and framework-agnostic. Covers the embeddable integration marketplace today; the surface will grow to the rest of the API.",
+  "version": "0.3.0",
+  "description": "Official JavaScript/TypeScript SDK for Workstudio. Headless and framework-agnostic: the embeddable integration marketplace, and Apps people use directly (@workstudio-inc/sdk/app).",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -17,6 +17,11 @@
       "types": "./dist/browser.d.ts",
       "import": "./dist/browser.js",
       "require": "./dist/browser.cjs"
+    },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.js",
+      "require": "./dist/app.cjs"
     }
   },
   "files": [
