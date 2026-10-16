@@ -269,6 +269,9 @@ const designs = app.data.collection<{ title: string; status: string }>('crava_de
 const saved = await designs.create({ title: 'Side table', status: 'draft' });
 await designs.update(saved.id, { status: 'checked' });     // merges; replace() replaces
 
+// What the App ships - templates, featured designs - at the version their install runs. Read-only.
+const templates = await app.content.pack<{ title: string }>('crava_templates').list();
+
 // Their files
 const file = await app.files.upload(photo);
 
@@ -284,8 +287,8 @@ await app.account.delete();
 - **Errors**: `SignInRequired` (sign in again), `AllowanceUsed` (this month's AI allowance is spent),
   and `AppError` with `status` and a `message` fit to show.
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
-  (`dataCollections` in its end-user access), the monthly AI allowance per person, sign-in methods
-  and branding.
+  (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
+  an App version is approved), the monthly AI allowance per person, sign-in methods and branding.
 
 ## Build
 

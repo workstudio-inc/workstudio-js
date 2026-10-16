@@ -181,6 +181,70 @@ export class Data {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Content
+// ---------------------------------------------------------------------------------------------
+
+export interface ContentItem<T = Record<string, unknown>> {
+  key: string;
+  data: T;
+  sortOrder?: number;
+}
+
+/** A content pack as the App ships it: one released version, the same for everyone using the App. */
+export interface ContentPack<T = Record<string, unknown>> {
+  name: string;
+  displayName?: string;
+  description?: string;
+  version: number;
+  fields?: unknown[];
+  items: ContentItem<T>[];
+}
+
+/**
+ * What the App ships besides its logic - templates, featured designs, sample records - at the
+ * version the person's install is pinned to. Read-only: the publisher writes it and releases it with
+ * the App.
+ */
+export class Content {
+  private readonly cache = new Map<string, Promise<ContentPack<unknown>>>();
+
+  constructor(private readonly http: Http) {}
+
+  /** One of the App's content packs, read once per session. */
+  pack<T = Record<string, unknown>>(name: string): ContentPackReader<T> {
+    return new ContentPackReader<T>(() => {
+      let pending = this.cache.get(name);
+      if (!pending) {
+        pending = this.http.request<ContentPack<unknown>>('GET', this.http.api(`/catalog/app-content/${encodeURIComponent(name)}`));
+        // A failed read is not kept: the next call asks again.
+        pending.catch(() => this.cache.delete(name));
+        this.cache.set(name, pending);
+      }
+      return pending as Promise<ContentPack<T>>;
+    });
+  }
+}
+
+export class ContentPackReader<T> {
+  constructor(private readonly load: () => Promise<ContentPack<T>>) {}
+
+  /** The whole pack: its description, version and items. */
+  read(): Promise<ContentPack<T>> {
+    return this.load();
+  }
+
+  /** The items, in the publisher's order. */
+  async list(): Promise<ContentItem<T>[]> {
+    return (await this.load()).items;
+  }
+
+  /** One item by its key, or null. */
+  async get(key: string): Promise<ContentItem<T> | null> {
+    return (await this.load()).items.find(i => i.key === key) ?? null;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Files
 // ---------------------------------------------------------------------------------------------
 

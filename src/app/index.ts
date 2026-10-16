@@ -9,6 +9,7 @@
  *   chat      conversations with the agents the App bundles - one per project, metered against the
  *             person's monthly allowance
  *   data      records in the collections the App declares - only their own
+ *   content   what the App ships - templates, featured designs - at the version their install runs
  *   files     their own photos and PDFs
  *
  * Isolation is the platform's, not the App's: every call carries the person's token, and the person
@@ -18,7 +19,7 @@ import { Auth } from './auth';
 import { Chat } from './chat';
 import { type AppConfig, resolve } from './config';
 import { Http } from './http';
-import { Account, Data, Files, Projects } from './resources';
+import { Account, Content, Data, Files, Projects } from './resources';
 
 export interface App {
   readonly auth: Auth;
@@ -26,6 +27,7 @@ export interface App {
   readonly projects: Projects;
   readonly chat: Chat;
   readonly data: Data;
+  readonly content: Content;
   readonly files: Files;
 }
 
@@ -40,6 +42,7 @@ export function createApp(config: AppConfig): App {
     projects: new Projects(http),
     chat: new Chat(http),
     data: new Data(http),
+    content: new Content(http),
     files: new Files(http),
   };
 }
@@ -50,5 +53,5 @@ export { Chat, Conversation } from './chat';
 export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn } from './chat';
 export type { AppConfig, KeyValueStore } from './config';
 export { AllowanceUsed, AppError, SignInRequired } from './errors';
-export { Account, Collection, Data, Files, Projects } from './resources';
-export type { DataRecord, FindOptions, Me, Project, ProjectInput, StoredFile } from './resources';
+export { Account, Collection, Content, ContentPackReader, Data, Files, Projects } from './resources';
+export type { ContentItem, ContentPack, DataRecord, FindOptions, Me, Project, ProjectInput, StoredFile } from './resources';
