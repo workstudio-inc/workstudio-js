@@ -27,7 +27,25 @@ interface RealmTokens {
 interface Pending {
   verifier: string;
   state: string;
+  /** Where the person was when they left to sign in: the App takes them back there. */
+  returnTo?: string;
 }
+
+/** How to send someone to the hosted page. */
+export interface SignInOptions {
+  /** Straight to Google or Apple. */
+  method?: SignInMethod;
+  /** Open on "create an account" rather than "sign in". */
+  signUp?: boolean;
+  /**
+   * Where the person was - a path and hash, e.g. `/#custom/abc`; the current address in a browser
+   * by default. It comes back from {@link Auth.completeSignIn} as `returnTo`.
+   */
+  returnTo?: string;
+}
+
+/** A completed sign-in, and where the person was when they left for it. */
+export type CompletedSignIn = SignedIn & { returnTo?: string };
 
 function memoryStore(): KeyValueStore {
   const m = new Map<string, string>();
@@ -143,12 +161,14 @@ export class Auth {
   }
 
   /** The hosted sign-in page's address, for an App that opens it itself. */
-  async signInUrl(method?: SignInMethod): Promise<string> {
+  async signInUrl(options: SignInMethod | SignInOptions = {}): Promise<string> {
+    const { method, signUp, returnTo } = typeof options === 'string' ? { method: options } as SignInOptions : options;
     const { signInIssuer, clientId } = this.config;
     if (!signInIssuer || !clientId) throw new Error('Sign-in is not set up: signInIssuer and clientId are required.');
     const verifier = randomString(48);
     const state = randomString(16);
-    await this.store.setItem(`${this.key}.pending`, JSON.stringify({ verifier, state } satisfies Pending));
+    const back = returnTo ?? (typeof location !== 'undefined' ? location.pathname + location.hash : undefined);
+    await this.store.setItem(`${this.key}.pending`, JSON.stringify({ verifier, state, returnTo: back } satisfies Pending));
     const params = new URLSearchParams({
       response_type: 'code',
       client_id: clientId,
@@ -160,12 +180,15 @@ export class Auth {
     });
     // Straight to that provider, when the person already chose one.
     if (method === 'google' || method === 'apple') params.set('kc_idp_hint', method);
-    return `${signInIssuer}/protocol/openid-connect/auth?${params}`;
+    // The same page opened on "create an account": the hosted page's registration form, which hands
+    // back exactly as signing in does.
+    const endpoint = signUp && !method ? 'registrations' : 'auth';
+    return `${signInIssuer}/protocol/openid-connect/${endpoint}?${params}`;
   }
 
   /** Send the person to the hosted sign-in page. */
-  async signIn(options: { method?: SignInMethod } = {}): Promise<void> {
-    const url = await this.signInUrl(options.method);
+  async signIn(options: SignInOptions = {}): Promise<void> {
+    const url = await this.signInUrl(options);
     if (this.config.openUrl) await this.config.openUrl(url);
     else if (typeof location !== 'undefined') location.assign(url);
     else throw new Error('Pass openUrl to open the sign-in page outside a browser.');
@@ -175,7 +198,7 @@ export class Auth {
    * Finish a sign-in, if this address is the hosted page sending the person back - the page's own
    * address in a browser, the deep link on a phone. A no-op (null) otherwise; call it at start-up.
    */
-  async completeSignIn(from?: string): Promise<SignedIn | null> {
+  async completeSignIn(from?: string): Promise<CompletedSignIn | null> {
     const href = from ?? (typeof location !== 'undefined' ? location.href : '');
     if (!href) return null;
     const url = new URL(href);
@@ -202,13 +225,26 @@ export class Auth {
     });
     const who = await this.swap(tokens);
     await this.save(who);
-    return who;
+    return pending.returnTo ? { ...who, returnTo: pending.returnTo } : who;
   }
 
-  /** Forget the sign-in on this device. */
+  /**
+   * Sign out: forget the sign-in on this device and end it on the hosted page too, so the next "sign
+   * in" asks again rather than letting the same person straight back in. Ending it there is best
+   * effort - signing out here never waits on, or fails with, the network.
+   */
   async signOut(): Promise<void> {
     await this.load();
+    const refreshToken = this.current?.refreshToken;
     await this.save(null);
+    const { signInIssuer, clientId } = this.config;
+    if (refreshToken && signInIssuer && clientId) {
+      void this.config.fetch(`${signInIssuer}/protocol/openid-connect/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: clientId, refresh_token: refreshToken }),
+      }).catch(() => undefined);
+    }
   }
 
   /**

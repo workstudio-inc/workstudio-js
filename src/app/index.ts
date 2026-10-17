@@ -48,10 +48,10 @@ export function createApp(config: AppConfig): App {
 }
 
 export { Auth } from './auth';
-export type { SignedIn, SignInMethod } from './auth';
+export type { CompletedSignIn, SignedIn, SignInMethod, SignInOptions } from './auth';
 export { Chat, Conversation } from './chat';
 export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn } from './chat';
 export type { AppConfig, KeyValueStore } from './config';
 export { AllowanceUsed, AppError, SignInRequired } from './errors';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Projects } from './resources';
-export type { ContentItem, ContentPack, DataRecord, FindOptions, Me, Project, ProjectInput, StoredFile } from './resources';
+export type { Allowance, ContentItem, ContentPack, DataRecord, FindOptions, Me, Project, ProjectInput, StoredFile } from './resources';

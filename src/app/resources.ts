@@ -5,8 +5,23 @@ import type { Http } from './http';
 // Account
 // ---------------------------------------------------------------------------------------------
 
+/** The person as this App knows them. */
 export interface Me {
+  accountId: string;
+  /** What they are called in the App - theirs to change with {@link Account.update}. */
+  displayName?: string;
+  /** Their installs of the App, by instance. */
+  apps?: string[];
   [key: string]: unknown;
+}
+
+/** This month's AI allowance in the App. */
+export interface Allowance {
+  usedUsd: number;
+  /** Null when the App sets no monthly allowance. */
+  monthlyBudgetUsd: number | null;
+  /** The day it starts again, e.g. `2026-11-01`. */
+  resetsOn: string;
 }
 
 /** The person's account in this App. */
@@ -16,6 +31,16 @@ export class Account {
   /** Who the platform knows the person as, in this App. */
   me(): Promise<Me> {
     return this.http.request<Me>('GET', this.http.api('/connection/end-users/me'));
+  }
+
+  /** Change what the person is called in the App. Their Google, Apple or email sign-in is not touched. */
+  update(changes: { displayName: string }): Promise<Me> {
+    return this.http.request<Me>('PATCH', this.http.api('/connection/end-users/me'), changes);
+  }
+
+  /** What the person has used of this month's AI allowance in the App, and when it resets. */
+  allowance(): Promise<Allowance> {
+    return this.http.request<Allowance>('GET', `${this.http.config.aiRuntimeUrl}/api/v1/workflow/ai-runtime/sessions/mine/allowance`);
   }
 
   /**
