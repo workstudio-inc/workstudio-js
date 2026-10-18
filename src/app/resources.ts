@@ -1,4 +1,4 @@
-import { AppError } from './errors';
+import { AllowanceUsed, AppError } from './errors';
 import type { Http } from './http';
 
 // ---------------------------------------------------------------------------------------------
@@ -315,4 +315,71 @@ export class Files {
   async delete(id: string): Promise<void> {
     await this.http.request<void>('DELETE', this.http.api(`/storage/my-files/${encodeURIComponent(id)}`));
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Pictures
+// ---------------------------------------------------------------------------------------------
+
+export interface PictureOptions {
+  /** One to three images - Blobs (a photo, a canvas) or data URLs. The first leads; the rest are references. */
+  images: Array<Blob | string>;
+  /** What to make of them: "photograph this design", "place the furniture from the second image into the room in the first". */
+  prompt: string;
+  size?: '1536x1024' | '1024x1536' | '1024x1024';
+  quality?: 'low' | 'medium' | 'high';
+  /** One of the models the platform allows Apps; its default when left out. */
+  model?: string;
+}
+
+export interface Picture {
+  /** A JPEG, as a data URL: show it, or save it with `files.upload`. */
+  image: string;
+  model: string;
+  size: string;
+  /** What it cost, charged to the person's monthly AI allowance in the App. */
+  costUsd: number;
+}
+
+/**
+ * Pictures made from the person's images by an image model: a render of their design made into a
+ * photograph, the design set into a photo of their room. Each is charged to their allowance.
+ * @throws AllowanceUsed when this month's allowance cannot pay for it
+ */
+export class Images {
+  constructor(private readonly http: Http) {}
+
+  async make(options: PictureOptions): Promise<Picture> {
+    const images = await Promise.all(options.images.map(i => (typeof i === 'string' ? i : dataUrl(i))));
+    try {
+      return await this.http.request<Picture>('POST', `${this.http.config.aiRuntimeUrl}/api/v1/workflow/ai-runtime/sessions/mine/images`, {
+        images,
+        prompt: options.prompt,
+        ...(options.size ? { size: options.size } : {}),
+        ...(options.quality ? { quality: options.quality } : {}),
+        ...(options.model ? { model: options.model } : {}),
+      });
+    } catch (e) {
+      if (e instanceof AppError && (e.status === 402 || e.code === 'ALLOWANCE_USED')) throw new AllowanceUsed(e.message);
+      throw e;
+    }
+  }
+}
+
+function dataUrl(blob: Blob): Promise<string> {
+  if (typeof FileReader !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+  // No FileReader (a server): base64 by hand, in chunks so a large photo does not overflow the stack.
+  return blob.arrayBuffer().then(buffer => {
+    const bytes = new Uint8Array(buffer);
+    let text = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return `data:${blob.type || 'image/png'};base64,${btoa(text)}`;
+  });
 }
