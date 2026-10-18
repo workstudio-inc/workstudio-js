@@ -6,6 +6,16 @@ import { AppError, SignInRequired } from './errors';
 export class Http {
   constructor(readonly config: ResolvedConfig, private readonly auth: Auth) {}
 
+  /** Whether calls go as someone: a person signed in here, or a token the App brings. */
+  async signedIn(): Promise<boolean> {
+    return Boolean(this.config.platformToken) || (await this.auth.signedIn()) !== null;
+  }
+
+  /** A GET that needs nobody signed in - what an App made public. */
+  async anonymous<T>(url: string): Promise<T> {
+    return this.send<T>(url, { method: 'GET', headers: { Accept: 'application/json' } }, false);
+  }
+
   async request<T>(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
     const token = await this.auth.token();
     const init: RequestInit = { method, headers: { Accept: 'application/json', Authorization: `Bearer ${token}`, ...headers } };
@@ -14,13 +24,17 @@ export class Http {
       init.body = JSON.stringify(body);
       (init.headers as Record<string, string>)['Content-Type'] = 'application/json';
     }
+    return this.send<T>(url, init, true);
+  }
+
+  private async send<T>(url: string, init: RequestInit, asSomeone: boolean): Promise<T> {
     let res: Response;
     try {
       res = await this.config.fetch(url, init);
     } catch {
       throw new AppError(0, 'Could not reach the service. Check the connection and try again.', 'NETWORK');
     }
-    if (res.status === 401) {
+    if (res.status === 401 && asSomeone) {
       await this.auth.refused();
       throw new SignInRequired('Your sign-in has expired. Please sign in again.');
     }

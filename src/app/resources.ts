@@ -237,13 +237,21 @@ export class Content {
 
   /** One of the App's content packs, read once per session. */
   pack<T = Record<string, unknown>>(name: string): ContentPackReader<T> {
-    return new ContentPackReader<T>(() => {
-      let pending = this.cache.get(name);
+    return new ContentPackReader<T>(async () => {
+      // Signed in: the pack at the release the person's install runs. Not yet, and the App said who
+      // it is (appId): the pack as the App's latest release made it public - or a 404 if it did not.
+      const asSomeone = await this.http.signedIn();
+      const appId = this.http.config.appId;
+      const key = `${asSomeone || !appId ? 'mine' : 'public'}:${name}`;
+      let pending = this.cache.get(key);
       if (!pending) {
-        pending = this.http.request<ContentPack<unknown>>('GET', this.http.api(`/catalog/app-content/${encodeURIComponent(name)}`));
+        pending = asSomeone || !appId
+          ? this.http.request<ContentPack<unknown>>('GET', this.http.api(`/catalog/app-content/${encodeURIComponent(name)}`))
+          : this.http.anonymous<ContentPack<unknown>>(
+              `${this.http.config.apiUrl}/api/v1/public/apps/${encodeURIComponent(appId)}/content/${encodeURIComponent(name)}`);
         // A failed read is not kept: the next call asks again.
-        pending.catch(() => this.cache.delete(name));
-        this.cache.set(name, pending);
+        pending.catch(() => this.cache.delete(key));
+        this.cache.set(key, pending);
       }
       return pending as Promise<ContentPack<T>>;
     });

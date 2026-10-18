@@ -12,6 +12,11 @@ export interface AppConfig {
   signInIssuer?: string;
   /** The sign-in client the platform assigned this build of the App (web, iPhone or Android). */
   clientId?: string;
+  /**
+   * The App's id on work.studio. With it, people who have not signed in yet can read the content the
+   * App made public (`content.pack(name)`) - featured designs, templates - before being asked to join.
+   */
+  appId?: string;
   /** Where the hosted sign-in sends the person back. Defaults to this page's origin. */
   redirectUri?: string;
   /** Where conversations stream from, when not `apiUrl`. The platform also says, per conversation. */

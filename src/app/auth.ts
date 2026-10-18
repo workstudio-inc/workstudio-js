@@ -12,7 +12,7 @@ export interface SignedIn {
   refreshToken?: string;
 }
 
-export type SignInMethod = 'google' | 'apple' | 'email';
+export type SignInMethod = 'google' | 'apple' | 'microsoft' | 'github' | 'email';
 
 const TOKEN_EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
 const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
@@ -33,7 +33,7 @@ interface Pending {
 
 /** How to send someone to the hosted page. */
 export interface SignInOptions {
-  /** Straight to Google or Apple. */
+  /** Straight to that provider - Google, Apple, Microsoft or GitHub - skipping the hosted page. */
   method?: SignInMethod;
   /** Open on "create an account" rather than "sign in". */
   signUp?: boolean;
@@ -179,7 +179,7 @@ export class Auth {
       code_challenge_method: 'S256',
     });
     // Straight to that provider, when the person already chose one.
-    if (method === 'google' || method === 'apple') params.set('kc_idp_hint', method);
+    if (method && method !== 'email') params.set('kc_idp_hint', method);
     // The same page opened on "create an account": the hosted page's registration form, which hands
     // back exactly as signing in does.
     const endpoint = signUp && !method ? 'registrations' : 'auth';

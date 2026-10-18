@@ -246,9 +246,11 @@ const app = createApp({
   apiUrl: 'https://api.work.studio',
   signInIssuer: 'https://auth.work.studio/realms/apps',
   clientId: 'crava-web-01a14509',     // shown in the App's "Direct use" settings
+  appId: '01a14509-a685-...',          // optional: lets visitors read the App's public content
 });
 
-// Sign in on the hosted page (Google, Apple or email), then finish when it sends the person back.
+// Sign in on the hosted page (Google, Apple, Microsoft, GitHub or email), then finish when it sends
+// the person back. Naming a provider skips the hosted page and goes straight to it.
 await app.auth.completeSignIn();      // at start-up; a no-op unless returning from sign-in
 if (!(await app.auth.signedIn())) await app.auth.signIn({ method: 'google' });
 
@@ -270,6 +272,8 @@ const saved = await designs.create({ title: 'Side table', status: 'draft' });
 await designs.update(saved.id, { status: 'checked' });     // merges; replace() replaces
 
 // What the App ships - templates, featured designs - at the version their install runs. Read-only.
+// Before anyone signs in, a pack the App lists in its publicContent, at its latest approved release
+// (needs appId).
 const templates = await app.content.pack<{ title: string }>('crava_templates').list();
 
 // Their files
