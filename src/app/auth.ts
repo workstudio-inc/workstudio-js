@@ -223,7 +223,16 @@ export class Auth {
       client_id: this.config.clientId!,
       code_verifier: pending.verifier,
     });
-    const who = await this.swap(tokens);
+    let who: SignedIn;
+    try {
+      who = await this.swap(tokens);
+    } catch (e) {
+      // The hosted page signed them in, but the App would not have them (not invited, say). End that
+      // sign-in there too: left open, the next sign-in - with another account - meets it and fails with
+      // "already authenticated as a different user".
+      this.endHostedSession(tokens.refresh_token);
+      throw e;
+    }
     await this.save(who);
     return pending.returnTo ? { ...who, returnTo: pending.returnTo } : who;
   }
@@ -237,6 +246,11 @@ export class Auth {
     await this.load();
     const refreshToken = this.current?.refreshToken;
     await this.save(null);
+    this.endHostedSession(refreshToken);
+  }
+
+  /** End the sign-in on the hosted page, best effort: never waits on, or fails with, the network. */
+  private endHostedSession(refreshToken: string | undefined): void {
     const { signInIssuer, clientId } = this.config;
     if (refreshToken && signInIssuer && clientId) {
       void this.config.fetch(`${signInIssuer}/protocol/openid-connect/logout`, {
