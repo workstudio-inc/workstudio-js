@@ -279,6 +279,15 @@ await designs.update(saved.id, { status: 'checked' });     // merges; replace() 
 // Before anyone signs in, a pack the App lists in its publicContent, at its latest approved release
 // (needs appId).
 const templates = await app.content.pack<{ title: string }>('crava_templates').list();
+// A big pack a page at a time - a gallery that loads as people scroll. `fields` leaves heavy data out
+// of the list, `tag` filters on the platform (several tags mean any), `facets: 'tags'` counts every
+// tag over the whole pack (for filter tabs). Pass `nextCursor` back for the next page; it is null on
+// the last. A cursor belongs to one pack version: a 409 means a new release landed - start again.
+const gallery = app.content.pack<{ title: string; tags: string[] }>('crava_templates');
+const first = await gallery.page({ limit: 12, tag: ['kitchen', 'dining room'], fields: ['title', 'tags', 'image'], facets: 'tags' });
+const more = first.nextCursor ? await gallery.page({ limit: 12, tag: ['kitchen', 'dining room'], fields: ['title', 'tags', 'image'], cursor: first.nextCursor }) : null;
+// One item, whole, without reading the rest of the pack (null when it is not there).
+const one = await gallery.item('walnut-sideboard');   // { key, data, sortOrder, version }
 
 // Their files
 const file = await app.files.upload(photo);

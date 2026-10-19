@@ -63,4 +63,4 @@ export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn, Waive
 export type { AppConfig, KeyValueStore } from './config';
 export { AllowanceUsed, AppError, SignInRequired } from './errors';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Images, Projects } from './resources';
-export type { Allowance, ContentItem, ContentPack, DataRecord, FindOptions, Me, Picture, PictureOptions, Project, ProjectInput, StoredFile } from './resources';
+export type { Allowance, ContentFacet, ContentItem, ContentPack, ContentPage, ContentPageOptions, DataRecord, FindOptions, Me, Picture, PictureOptions, Project, ProjectInput, PublishedContentItem, StoredFile } from './resources';

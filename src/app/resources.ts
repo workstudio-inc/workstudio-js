@@ -225,41 +225,90 @@ export interface ContentPack<T = Record<string, unknown>> {
   items: ContentItem<T>[];
 }
 
+/** What {@link ContentPackReader.page} asks for. All optional. */
+export interface ContentPageOptions {
+  /** Items per page, 1 to 60. Default 60. */
+  limit?: number;
+  /** The `nextCursor` of the page before; leave out for the first page. */
+  cursor?: string | null;
+  /** Only items whose `data.tags` holds this tag - or any of these - ignoring case. */
+  tag?: string | string[];
+  /** The top-level `data` keys to include - leave a heavy one (a design) out of a list. */
+  fields?: string[];
+  /** `'tags'`: how many items carry each tag, over the whole pack - for filter tabs. */
+  facets?: 'tags' | Array<'tags'>;
+}
+
+/** How many items of the whole pack carry a tag. */
+export interface ContentFacet {
+  value: string;
+  count: number;
+}
+
+/** One page of a content pack. */
+export interface ContentPage<T = Record<string, unknown>> {
+  items: ContentItem<T>[];
+  /** Pass to the next `page()` call; null on the last page. */
+  nextCursor: string | null;
+  /** How many items match, across every page. */
+  total: number;
+  /** The pack version the page is from. A cursor only works with the version it came from. */
+  version: number;
+  facets?: { tags?: ContentFacet[] };
+  name?: string;
+  displayName?: string;
+  description?: string;
+}
+
+/** One item of a content pack, whole, with the pack version it is from. */
+export interface PublishedContentItem<T = Record<string, unknown>> extends ContentItem<T> {
+  pack?: string;
+  version: number;
+}
+
+/** How a reader reaches the platform: a path under the pack, as the person or as a visitor. */
+type PackFetch = (suffix: string) => Promise<unknown>;
+
 /**
  * What the App ships besides its logic - templates, featured designs, sample records - at the
  * version the person's install is pinned to. Read-only: the publisher writes it and releases it with
  * the App.
  */
 export class Content {
-  private readonly cache = new Map<string, Promise<ContentPack<unknown>>>();
+  private readonly cache = new Map<string, Promise<unknown>>();
 
   constructor(private readonly http: Http) {}
 
   /** One of the App's content packs, read once per session. */
   pack<T = Record<string, unknown>>(name: string): ContentPackReader<T> {
-    return new ContentPackReader<T>(async () => {
+    const fetch: PackFetch = async suffix => {
       // Signed in: the pack at the release the person's install runs. Not yet, and the App said who
       // it is (appId): the pack as the App's latest release made it public - or a 404 if it did not.
       const asSomeone = await this.http.signedIn();
       const appId = this.http.config.appId;
-      const key = `${asSomeone || !appId ? 'mine' : 'public'}:${name}`;
+      const mine = asSomeone || !appId;
+      const key = `${mine ? 'mine' : 'public'}:${name}${suffix}`;
       let pending = this.cache.get(key);
       if (!pending) {
-        pending = asSomeone || !appId
-          ? this.http.request<ContentPack<unknown>>('GET', this.http.api(`/catalog/app-content/${encodeURIComponent(name)}`))
-          : this.http.anonymous<ContentPack<unknown>>(
-              `${this.http.config.apiUrl}/api/v1/public/apps/${encodeURIComponent(appId)}/content/${encodeURIComponent(name)}`);
+        pending = mine
+          ? this.http.request<unknown>('GET', this.http.api(`/catalog/app-content/${encodeURIComponent(name)}${suffix}`))
+          : this.http.anonymous<unknown>(
+              `${this.http.config.apiUrl}/api/v1/public/apps/${encodeURIComponent(appId!)}/content/${encodeURIComponent(name)}${suffix}`);
         // A failed read is not kept: the next call asks again.
         pending.catch(() => this.cache.delete(key));
         this.cache.set(key, pending);
       }
-      return pending as Promise<ContentPack<T>>;
-    });
+      return pending;
+    };
+    return new ContentPackReader<T>(() => fetch('') as Promise<ContentPack<T>>, fetch);
   }
 }
 
 export class ContentPackReader<T> {
-  constructor(private readonly load: () => Promise<ContentPack<T>>) {}
+  constructor(
+    private readonly load: () => Promise<ContentPack<T>>,
+    private readonly fetch?: PackFetch,
+  ) {}
 
   /** The whole pack: its description, version and items. */
   read(): Promise<ContentPack<T>> {
@@ -271,10 +320,101 @@ export class ContentPackReader<T> {
     return (await this.load()).items;
   }
 
-  /** One item by its key, or null. */
+  /** One item by its key, or null. Reads the whole pack - for one item alone, {@link item}. */
   async get(key: string): Promise<ContentItem<T> | null> {
     return (await this.load()).items.find(i => i.key === key) ?? null;
   }
+
+  /**
+   * A page of the pack, in the publisher's order: what a gallery reads as people scroll. Pass the
+   * page's `nextCursor` back for the next one. A cursor belongs to one pack version: when the App
+   * moves to a new release mid-scroll the answer is an {@link AppError} with `status` 409 - start
+   * again from the first page.
+   */
+  async page(options: ContentPageOptions = {}): Promise<ContentPage<T>> {
+    const q = new URLSearchParams();
+    q.set('limit', String(options.limit ?? 60));
+    if (options.cursor) q.set('cursor', options.cursor);
+    for (const t of tagsOf(options.tag)) q.append('tag', t);
+    if (options.fields?.length) q.set('fields', options.fields.join(','));
+    const facets = options.facets === undefined ? [] : Array.isArray(options.facets) ? options.facets : [options.facets];
+    if (facets.length) q.set('facets', facets.join(','));
+
+    const body = this.fetch ? ((await this.fetch(`?${q}`)) as Partial<ContentPage<T>> & Partial<ContentPack<T>>) : null;
+    if (body && typeof body.total === 'number' && Array.isArray(body.items)) {
+      return { ...body, items: body.items, nextCursor: body.nextCursor ?? null, total: body.total, version: body.version as number };
+    }
+    // A platform from before paging answers the whole pack whatever is asked: page it here.
+    return pageLocally(body && Array.isArray(body.items) ? (body as ContentPack<T>) : await this.load(), options);
+  }
+
+  /** One item by its key, whole - without reading the rest of the pack - or null. */
+  async item(key: string): Promise<PublishedContentItem<T> | null> {
+    if (this.fetch) {
+      try {
+        return (await this.fetch(`/items/${key.split('/').map(encodeURIComponent).join('/')}`)) as PublishedContentItem<T>;
+      } catch (e) {
+        if (!(e instanceof AppError) || e.status !== 404) throw e;
+        // Not there - or a platform from before item reads: the whole pack says which.
+      }
+    }
+    const pack = await this.load();
+    const found = pack.items.find(i => i.key === key);
+    return found ? { ...found, pack: pack.name, version: pack.version } : null;
+  }
+}
+
+function tagsOf(tag: string | string[] | undefined): string[] {
+  return (Array.isArray(tag) ? tag : tag ? [tag] : []).map(t => t.trim()).filter(Boolean);
+}
+
+function itemTags(item: ContentItem<unknown>): string[] {
+  const raw = (item.data as Record<string, unknown> | null)?.tags;
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
+  return list.filter((t): t is string => typeof t === 'string' && t.trim() !== '').map(t => t.trim());
+}
+
+/** The platform's paging, over a whole pack already read. Cursors made here are this SDK's own. */
+function pageLocally<T>(pack: ContentPack<T>, options: ContentPageOptions): ContentPage<T> {
+  const limit = Math.min(60, Math.max(1, options.limit ?? 60));
+  const wanted = new Set(tagsOf(options.tag).map(t => t.toLowerCase()));
+  const ordered = [...pack.items].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  const matching = wanted.size ? ordered.filter(i => itemTags(i).some(t => wanted.has(t.toLowerCase()))) : ordered;
+  const at = /^local:(\d+):(\d+)$/.exec(options.cursor ?? '');
+  if (options.cursor && (!at || Number(at[1]) !== pack.version)) {
+    throw new AppError(409, 'The content changed. Start again from the first page.');
+  }
+  const from = at ? Number(at[2]) : 0;
+  const to = Math.min(from + limit, matching.length);
+  const keep = options.fields?.length ? new Set(options.fields) : null;
+  const items = matching.slice(from, to).map(i =>
+    keep ? { ...i, data: Object.fromEntries(Object.entries(i.data as Record<string, unknown>).filter(([k]) => keep.has(k))) as T } : i,
+  );
+  const page: ContentPage<T> = {
+    name: pack.name,
+    displayName: pack.displayName,
+    description: pack.description,
+    version: pack.version,
+    items,
+    nextCursor: to < matching.length ? `local:${pack.version}:${to}` : null,
+    total: matching.length,
+  };
+  if (options.facets) {
+    const counts = new Map<string, ContentFacet>();
+    for (const item of ordered) {
+      const seen = new Set<string>();
+      for (const tag of itemTags(item)) {
+        const k = tag.toLowerCase();
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const f = counts.get(k) ?? { value: tag, count: 0 };
+        f.count++;
+        counts.set(k, f);
+      }
+    }
+    page.facets = { tags: [...counts.values()].sort((a, b) => b.count - a.count) };
+  }
+  return page;
 }
 
 // ---------------------------------------------------------------------------------------------
