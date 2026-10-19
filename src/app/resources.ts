@@ -276,6 +276,8 @@ type PackFetch = (suffix: string) => Promise<unknown>;
  */
 export class Content {
   private readonly cache = new Map<string, Promise<unknown>>();
+  /** Packs the platform answered whole when asked for a page - a platform from before paging. */
+  private readonly unpaged = new Set<string>();
 
   constructor(private readonly http: Http) {}
 
@@ -300,7 +302,10 @@ export class Content {
       }
       return pending;
     };
-    return new ContentPackReader<T>(() => fetch('') as Promise<ContentPack<T>>, fetch);
+    return new ContentPackReader<T>(() => fetch('') as Promise<ContentPack<T>>, fetch, {
+      pages: () => !this.unpaged.has(name),
+      answeredWhole: () => this.unpaged.add(name),
+    });
   }
 }
 
@@ -308,6 +313,8 @@ export class ContentPackReader<T> {
   constructor(
     private readonly load: () => Promise<ContentPack<T>>,
     private readonly fetch?: PackFetch,
+    /** Whether the platform pages this pack; once it answers whole, every page comes from one read. */
+    private readonly paging?: { pages(): boolean; answeredWhole(): void },
   ) {}
 
   /** The whole pack: its description, version and items. */
@@ -340,11 +347,14 @@ export class ContentPackReader<T> {
     const facets = options.facets === undefined ? [] : Array.isArray(options.facets) ? options.facets : [options.facets];
     if (facets.length) q.set('facets', facets.join(','));
 
-    const body = this.fetch ? ((await this.fetch(`?${q}`)) as Partial<ContentPage<T>> & Partial<ContentPack<T>>) : null;
+    if (!this.fetch || this.paging?.pages() === false) return pageLocally(await this.load(), options);
+    const body = (await this.fetch(`?${q}`)) as Partial<ContentPage<T>> & Partial<ContentPack<T>>;
     if (body && typeof body.total === 'number' && Array.isArray(body.items)) {
       return { ...body, items: body.items, nextCursor: body.nextCursor ?? null, total: body.total, version: body.version as number };
     }
-    // A platform from before paging answers the whole pack whatever is asked: page it here.
+    // A platform from before paging answers the whole pack whatever is asked: page it here, and read
+    // the pack once (read() keeps it) for the pages after.
+    this.paging?.answeredWhole();
     return pageLocally(body && Array.isArray(body.items) ? (body as ContentPack<T>) : await this.load(), options);
   }
 
