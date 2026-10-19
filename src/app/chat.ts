@@ -48,6 +48,42 @@ export interface SendOptions {
 export interface Reply {
   text: string;
   usage: { input?: number; output?: number };
+  /**
+   * This turn, for `waive()`: present on conversations held to a per-person AI allowance.
+   * Pass it to `conversation.waive(turnRef)` when the answer turned out to be unusable.
+   */
+  turnRef?: string;
+  /** True when nothing was counted against the person's allowance for this turn. */
+  notCharged?: boolean;
+  /** True when the App may still waive this turn's charge (for a few minutes after it). */
+  waivable?: boolean;
+}
+
+/** The outcome of `waive()`. */
+export interface Waived {
+  /** True when the turn's charge was given back to the person's allowance. */
+  waived: boolean;
+  /** What was given back, in USD. */
+  amountUsd?: number;
+  /** Why not, when `waived` is false: `NOT_FOUND` (not theirs, too old, or already waived), `LIMIT_REACHED`, or `UNAVAILABLE`. */
+  reason?: 'NOT_FOUND' | 'LIMIT_REACHED' | 'UNAVAILABLE';
+}
+
+/**
+ * A turn that ended in an error. When the platform did not count it against the person's
+ * allowance, `notCharged` is true and the App may say so.
+ */
+export class TurnFailed extends AppError {
+  readonly turnRef?: string;
+  readonly notCharged: boolean;
+
+  constructor(status: number, message: string, code: string | undefined, turnRef: string | undefined, notCharged: boolean) {
+    super(status, message, code);
+    this.name = 'TurnFailed';
+    this.turnRef = turnRef;
+    this.notCharged = notCharged;
+    Object.setPrototypeOf(this, TurnFailed.prototype);
+  }
 }
 
 interface Started {
@@ -94,6 +130,7 @@ export class Conversation {
     const decoder = new TextDecoder();
     let buffer = '';
     let streamed = '';
+    let turn: { turnRef?: string; notCharged?: boolean; waivable?: boolean } = {};
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -108,23 +145,54 @@ export class Conversation {
         } catch {
           continue;
         }
-        if (event.type === 'token' && typeof event.content === 'string') {
+        if (event.type === 'allowance') {
+          // How the turn was settled against the person's allowance; arrives just before done/error.
+          turn = {
+            turnRef: typeof event.turnRef === 'string' ? event.turnRef : undefined,
+            notCharged: event.notCharged === true,
+            waivable: event.waivable === true,
+          };
+        } else if (event.type === 'token' && typeof event.content === 'string') {
           streamed += event.content;
           options.onText?.(event.content);
         } else if (event.type === 'done') {
           // A guardrail can rewrite the answer; what it says then is the answer.
           const text = event.contentReplaced === true && typeof event.content === 'string' ? event.content : streamed;
-          return { text, usage: { input: num(event.promptTokens), output: num(event.completionTokens) } };
+          return { text, usage: { input: num(event.promptTokens), output: num(event.completionTokens) }, ...turn };
         } else if (event.type === 'error') {
           const code = String(event.errorCode ?? event.code ?? '');
           const msg = typeof event.message === 'string' ? event.message : undefined;
           if (code === 'BUDGET_EXCEEDED' || code === 'COST_POLICY_EXCEEDED') throw new AllowanceUsed(msg);
-          throw new AppError(502, msg ?? 'The answer stopped partway through.', code || undefined);
+          throw new TurnFailed(502, msg ?? 'The answer stopped partway through.', code || undefined, turn.turnRef, turn.notCharged === true);
         }
       }
     }
-    if (streamed) return { text: streamed, usage: {} };
+    if (streamed) return { text: streamed, usage: {}, ...turn };
     throw new AppError(502, 'The answer stopped before it began.');
+  }
+
+  /**
+   * Give back what one of this conversation's recent turns cost the person, because the App could
+   * not use its answer (it could not be read, had nothing in it, failed the App's own checks).
+   * `turnRef` is `reply.turnRef`. Allowed once per turn, within minutes of it, for the person's own
+   * turns, and a limited number of times a month. A turn that ended in an error was already not
+   * counted (`TurnFailed.notCharged`). Never throws for a turn that cannot be waived: check `waived`.
+   */
+  async waive(turnRef: string, reason?: string): Promise<Waived> {
+    try {
+      const body = await this.http.request<{ turnRef?: string; waivedUsd?: number }>('POST',
+        `${this.http.config.aiRuntimeUrl}/api/v1/workflow/ai-runtime/sessions/mine/${encodeURIComponent(this.id)}/turns/${encodeURIComponent(turnRef)}/waive`,
+        reason ? { reason } : {});
+      return { waived: true, amountUsd: typeof body?.waivedUsd === 'number' ? body.waivedUsd : undefined };
+    } catch (e) {
+      if (e instanceof SignInRequired) throw e;
+      if (e instanceof AppError) {
+        if (e.status === 404) return { waived: false, reason: 'NOT_FOUND' };
+        if (e.status === 429) return { waived: false, reason: 'LIMIT_REACHED' };
+        return { waived: false, reason: 'UNAVAILABLE' };
+      }
+      return { waived: false, reason: 'UNAVAILABLE' };
+    }
   }
 
   private async attach(file: Blob | File, n: number): Promise<string> {

@@ -265,6 +265,10 @@ const reply = await chat.send('A walnut side table, 50cm square, with a lower sh
 });
 await app.chat.list({ projectId: project.id });
 await app.chat.rename(chat.id, 'Side table');
+// An answer the App cannot use (unparseable, empty, fails its checks): give the person back what
+// that turn cost. Once per turn, within 10 minutes, a limited number of times a month. A turn that
+// ended in an error was never counted (TurnFailed.notCharged).
+if (!usable(reply) && reply.turnRef) await chat.waive(reply.turnRef, 'no proposals');
 
 // Records in a collection the App declares - only this person's
 const designs = app.data.collection<{ title: string; status: string }>('crava_designs');
@@ -289,7 +293,8 @@ await app.account.delete();
 - **Servers** acting for a signed-in person: pass `platformToken: () => token` instead of the sign-in
   settings.
 - **Errors**: `SignInRequired` (sign in again), `AllowanceUsed` (this month's AI allowance is spent),
-  and `AppError` with `status` and a `message` fit to show.
+  `TurnFailed` (an answer that ended in an error; `notCharged` says it was not counted against the
+  allowance), and `AppError` with `status` and a `message` fit to show.
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
   an App version is approved), the monthly AI allowance per person, sign-in methods and branding.
