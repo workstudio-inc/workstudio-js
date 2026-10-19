@@ -299,6 +299,40 @@ await app.account.delete();
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
   an App version is approved), the monthly AI allowance per person, sign-in methods and branding.
 
+### Plans: paid tiers for the App's people
+
+An App can sell plans - say Free with $1 of AI a month and Plus with $5 - paid to the App
+publisher's own Stripe account through Stripe's hosted Checkout and customer portal (the App never
+sees a card). A person's plan sets their monthly AI allowance; it comes with their next platform
+token, so call `billing.refresh()` when they come back from paying.
+
+```ts
+const plan = await app.billing.plan();
+// { enabled: true, plan: 'free', name: 'Free', monthlyBudgetUsd: 1, paid: false, canUpgrade: true,
+//   plans: [{ id: 'free', ... }, { id: 'plus', name: 'Plus', monthlyBudgetUsd: 5,
+//            prices: [{ id: 'price_...', interval: 'month', amountCents: 799, currency: 'usd' }, ...] }] }
+
+// Buy: goes to Stripe Checkout (openUrl on a phone). The addresses must be on the App's own web origins.
+await app.billing.checkout({ priceId: plus.prices[0].id, successUrl: 'https://crava.me/#plus-welcome' });
+
+// Back at the success address: ask Stripe how it stands and get a token with the new allowance.
+const now = await app.billing.refresh();      // now.plan === 'plus'
+
+// Change the card, see invoices, cancel (the plan stays until the period's end).
+if (now.canManage) await app.billing.manage({ returnUrl: 'https://crava.me/' });
+```
+
+- `renewsAt` / `endsAt` say when a paid plan renews, or - cancelled - when it ends; `past_due` keeps
+  the plan for a few days while Stripe retries the payment.
+- `checkout` refuses (`AppError` 409, `ALREADY_SUBSCRIBED`) while the person already pays: send them
+  to `manage()` instead. Pass `open: false` to either to get the address without going there.
+- `app.auth.renew()` gets a fresh platform token at any time.
+- Deleting the account (`account.delete()`) cancels the person's subscription at once.
+- The publisher sets the plans (`PUT .../catalog/integrations/{id}/end-user-access/billing`) and
+  connects their Stripe account (`PUT .../end-user-access/billing/stripe-key`, write-only).
+- Phone apps: app stores have their own rules for selling digital goods in an app; check them before
+  offering `checkout` inside a phone build.
+
 ## Build
 
 ```

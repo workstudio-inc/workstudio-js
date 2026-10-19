@@ -282,6 +282,20 @@ export class Auth {
     return fresh;
   }
 
+  /**
+   * A fresh platform token now, whatever the current one's expiry - when something it carries has
+   * changed, such as the person's plan and allowance after a checkout. False when nobody is signed in,
+   * the App brings its own token, or the sign-in has lapsed (then the person must sign in again).
+   */
+  async renew(): Promise<boolean> {
+    if (this.config.platformToken) return false;
+    await this.load();
+    const who = this.current;
+    if (!who) return false;
+    this.refreshing ??= this.refresh(who).finally(() => (this.refreshing = null));
+    return (await this.refreshing) !== null;
+  }
+
   /** Forget the sign-in after the platform refused it, so the App asks the person again. */
   async refused(): Promise<void> {
     if (!this.config.platformToken) await this.save(null);
