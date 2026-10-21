@@ -302,6 +302,7 @@ await app.account.delete();
 - **Servers** acting for a signed-in person: pass `platformToken: () => token` instead of the sign-in
   settings.
 - **Errors**: `SignInRequired` (sign in again), `AllowanceUsed` (this month's AI allowance is spent),
+  `AiPaused` (AI is paused in the App for everyone on the person's plan, or for everyone - see below),
   `TurnFailed` (an answer that ended in an error; `notCharged` says it was not counted against the
   allowance), and `AppError` with `status` and a `message` fit to show.
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
@@ -341,6 +342,29 @@ if (now.canManage) await app.billing.manage({ returnUrl: 'https://crava.me/' });
   connects their Stripe account (`PUT .../end-user-access/billing/stripe-key`, write-only).
 - Phone apps: app stores have their own rules for selling digital goods in an app; check them before
   offering `checkout` inside a phone build.
+
+### When AI is paused
+
+Besides each person's allowance, a publisher can cap what all the people on a plan spend together
+(a shared pool: say the free plan's $20 a day and $200 a month), and its own AI budget can run out.
+Then AI is paused in the App until a set time; everything else keeps working. Ask before starting:
+
+```ts
+const ai = await app.ai.status();          // cached 30 s; never throws; 2 s timeout
+// { paused: true, reason: 'pool', code: 'APP_FREE_POOL_PAUSED', scope: 'day',
+//   resetAt: '2026-10-21T00:00:00Z', plan: 'free', known: true }
+if (ai.paused && ai.reason !== 'allowance') showPaused(new Date(ai.resetAt!));   // the person's local time
+```
+
+- `reason`: `pool` (their plan's shared pool - people on other plans are not affected), `app_budget`
+  (the App's own budget - everyone), `allowance` (their own monthly allowance; a request would throw
+  `AllowanceUsed`).
+- A request refused anyway throws `AiPaused` with the same `reason`, `scope`, `resetAt` and `plan`
+  (codes `APP_FREE_POOL_PAUSED`, `APP_AI_PAUSED`); `status()` then answers paused at once.
+- It fails open: signed out, offline, slow, or a platform without the check answers
+  `{ paused: false, known: false }`.
+- A turn already running when the pool runs out is let finish, and so are up to two follow-up turns of
+  the same conversation within 15 minutes, so a multi-round request is not cut off half done.
 
 ## Build
 

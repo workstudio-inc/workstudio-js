@@ -13,10 +13,13 @@
  *   files     their own photos and PDFs
  *   billing   their plan in the App - buying one (Stripe Checkout) and managing it, paid to the
  *             App's publisher; a plan sets their monthly AI allowance
+ *   ai        whether AI can be used right now - or is paused (their plan's shared pool, or the
+ *             App's own budget, is spent) and until when
  *
  * Isolation is the platform's, not the App's: every call carries the person's token, and the person
  * can only ever reach their own install of the App. See https://docs.work.studio.
  */
+import { Ai } from './ai';
 import { Auth } from './auth';
 import { Billing } from './billing';
 import { Chat } from './chat';
@@ -34,6 +37,7 @@ export interface App {
   readonly files: Files;
   readonly images: Images;
   readonly billing: Billing;
+  readonly ai: Ai;
 }
 
 /** Create the client for one App. */
@@ -51,9 +55,12 @@ export function createApp(config: AppConfig): App {
     files: new Files(http),
     images: new Images(http),
     billing: new Billing(http, auth),
+    ai: new Ai(http),
   };
 }
 
+export { Ai } from './ai';
+export type { AiStatus, AiStatusOptions, AiStatusReason } from './ai';
 export { Auth } from './auth';
 export type { CompletedSignIn, SignedIn, SignInMethod, SignInOptions } from './auth';
 export { Billing } from './billing';
@@ -61,6 +68,7 @@ export type { CheckoutOptions, ManageOptions, Plan, PlanOption, PlanPrice } from
 export { Chat, Conversation, TurnFailed } from './chat';
 export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn, Waived } from './chat';
 export type { AppConfig, KeyValueStore } from './config';
-export { AllowanceUsed, AppError, SignInRequired } from './errors';
+export { AiPaused, AllowanceUsed, AppError, SignInRequired } from './errors';
+export type { AiPausedReason } from './errors';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Images, Projects } from './resources';
 export type { Allowance, ContentFacet, ContentItem, ContentPack, ContentPage, ContentPageOptions, DataRecord, FindOptions, Me, Picture, PictureOptions, Project, ProjectInput, PublishedContentItem, StoredFile } from './resources';

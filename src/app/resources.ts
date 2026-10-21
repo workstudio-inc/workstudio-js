@@ -1,4 +1,4 @@
-import { AllowanceUsed, AppError } from './errors';
+import { AiPaused, AllowanceUsed, AppError } from './errors';
 import type { Http } from './http';
 
 // ---------------------------------------------------------------------------------------------
@@ -495,6 +495,7 @@ export interface Picture {
  * Pictures made from the person's images by an image model: a render of their design made into a
  * photograph, the design set into a photo of their room. Each is charged to their allowance.
  * @throws AllowanceUsed when this month's allowance cannot pay for it
+ * @throws AiPaused when AI is paused in the App (its plan's shared pool, or the App's own budget)
  */
 export class Images {
   constructor(private readonly http: Http) {}
@@ -510,6 +511,8 @@ export class Images {
         ...(options.model ? { model: options.model } : {}),
       });
     } catch (e) {
+      const paused = e instanceof AppError ? AiPaused.from(e.details ?? { code: e.code }, e.message) : null;
+      if (paused) throw this.http.paused(paused);
       if (e instanceof AppError && (e.status === 402 || e.code === 'ALLOWANCE_USED')) throw new AllowanceUsed(e.message);
       throw e;
     }

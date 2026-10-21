@@ -1,10 +1,22 @@
 import type { Auth } from './auth';
 import type { ResolvedConfig } from './config';
-import { AppError, SignInRequired } from './errors';
+import { AiPaused, AppError, SignInRequired } from './errors';
 
 /** Calls the platform as the signed-in person. */
 export class Http {
   constructor(readonly config: ResolvedConfig, private readonly auth: Auth) {}
+
+  /**
+   * The last pause a request ran into, so `ai.status()` says paused straight away rather than after
+   * its cache runs out. Disregarded once its `resetAt` has passed.
+   */
+  lastPause: AiPaused | null = null;
+
+  /** Remember a pause a request ran into, and hand it back to throw. */
+  paused(error: AiPaused): AiPaused {
+    this.lastPause = error;
+    return error;
+  }
 
   /** Whether calls go as someone: a person signed in here, or a token the App brings. */
   async signedIn(): Promise<boolean> {
@@ -46,7 +58,10 @@ export class Http {
     } catch {
       parsed = text;
     }
-    if (!res.ok) throw new AppError(res.status, messageOf(parsed, res.status), codeOf(parsed));
+    if (!res.ok) {
+      const details = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
+      throw new AppError(res.status, messageOf(parsed, res.status), codeOf(parsed), details);
+    }
     return parsed as T;
   }
 
