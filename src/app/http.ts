@@ -11,9 +11,14 @@ export class Http {
     return Boolean(this.config.platformToken) || (await this.auth.signedIn()) !== null;
   }
 
-  /** A GET that needs nobody signed in - what an App made public. */
-  async anonymous<T>(url: string): Promise<T> {
-    return this.send<T>(url, { method: 'GET', headers: { Accept: 'application/json' } }, false);
+  /** A call that needs nobody signed in - what an App made public, or a guest share's link. */
+  async anonymous<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
+    const init: RequestInit = { method, headers: { Accept: 'application/json' } };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+      (init.headers as Record<string, string>)['Content-Type'] = 'application/json';
+    }
+    return this.send<T>(url, init, false);
   }
 
   async request<T>(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {

@@ -19,6 +19,8 @@ export interface PlanOption {
   /** The monthly AI allowance on this plan, in US dollars. */
   monthlyBudgetUsd: number;
   prices: PlanPrice[];
+  /** What the plan unlocks in the App, in the App's own words (`full_plans`, `proposals`). */
+  features?: string[];
 }
 
 /** The person's plan in the App, and the App's plans. */
@@ -47,6 +49,8 @@ export interface Plan {
   /** The plan everyone starts on. */
   defaultPlan: string | null;
   plans: PlanOption[];
+  /** What the person's plan unlocks in the App - also in their token, for the App's own server to check. */
+  features?: string[];
 }
 
 export interface CheckoutOptions {

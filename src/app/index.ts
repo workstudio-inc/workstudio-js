@@ -23,6 +23,7 @@ import { Chat } from './chat';
 import { type AppConfig, resolve } from './config';
 import { Http } from './http';
 import { Account, Content, Data, Files, Images, Projects } from './resources';
+import { Shares } from './shares';
 
 export interface App {
   readonly auth: Auth;
@@ -34,6 +35,7 @@ export interface App {
   readonly files: Files;
   readonly images: Images;
   readonly billing: Billing;
+  readonly shares: Shares;
 }
 
 /** Create the client for one App. */
@@ -51,6 +53,7 @@ export function createApp(config: AppConfig): App {
     files: new Files(http),
     images: new Images(http),
     billing: new Billing(http, auth),
+    shares: new Shares(http),
   };
 }
 
@@ -63,4 +66,6 @@ export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn, Waive
 export type { AppConfig, KeyValueStore } from './config';
 export { AllowanceUsed, AppError, SignInRequired } from './errors';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Images, Projects } from './resources';
+export { Shares } from './shares';
+export type { GuestShare, NewShare, Share, ShareComment, ShareDecision } from './shares';
 export type { Allowance, ContentFacet, ContentItem, ContentPack, ContentPage, ContentPageOptions, DataRecord, FindOptions, Me, Picture, PictureOptions, Project, ProjectInput, PublishedContentItem, StoredFile } from './resources';
