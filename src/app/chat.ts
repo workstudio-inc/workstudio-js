@@ -1,5 +1,5 @@
 import type { Http } from './http';
-import { AllowanceUsed, AppError, SignInRequired } from './errors';
+import { AiPaused, AllowanceUsed, AppError, SignInRequired } from './errors';
 
 /** One of the person's conversations, as listed. */
 export interface ConversationSummary {
@@ -162,6 +162,9 @@ export class Conversation {
         } else if (event.type === 'error') {
           const code = String(event.errorCode ?? event.code ?? '');
           const msg = typeof event.message === 'string' ? event.message : undefined;
+          // The App's AI paused (its plan's shared pool, or the App's own budget) - not the person's allowance.
+          const paused = AiPaused.from(event, msg);
+          if (paused) throw this.http.paused(paused);
           if (code === 'BUDGET_EXCEEDED' || code === 'COST_POLICY_EXCEEDED') throw new AllowanceUsed(msg);
           throw new TurnFailed(502, msg ?? 'The answer stopped partway through.', code || undefined, turn.turnRef, turn.notCharged === true);
         }
@@ -229,6 +232,8 @@ export class Chat {
       });
     } catch (e) {
       if (e instanceof SignInRequired) throw e;
+      const paused = e instanceof AppError ? AiPaused.from(e.details, e.message) : null;
+      if (paused) throw this.http.paused(paused);
       if (e instanceof AppError && /allowance/i.test(e.message)) throw new AllowanceUsed(e.message);
       throw e;
     }
