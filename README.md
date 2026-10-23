@@ -372,4 +372,5 @@ if (ai.paused && ai.reason !== 'allowance') showPaused(new Date(ai.resetAt!));  
 npm install
 npm run build      # emits ESM + CJS + .d.ts to dist/
 npm run typecheck
+npm test           # builds, then runs test/*.test.mjs on dist/ (node:test)
 ```
