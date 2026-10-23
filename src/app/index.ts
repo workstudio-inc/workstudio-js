@@ -17,6 +17,9 @@
  *             App's own budget, is spent) and until when
  *   shares    a frozen copy of something of theirs, opened by link by someone with no account, who
  *             can comment and approve it
+ *   listings  the person's public profile of one kind ("shop"), found by others by ZIP code
+ *   requests  asking a listing for something, and the thread both ways; the owner's side is
+ *             `requests.inbox`
  *
  * Isolation is the platform's, not the App's: every call carries the person's token, and the person
  * can only ever reach their own install of the App. See https://docs.work.studio.
@@ -27,6 +30,8 @@ import { Billing } from './billing';
 import { Chat } from './chat';
 import { type AppConfig, resolve } from './config';
 import { Http } from './http';
+import { Listings } from './listings';
+import { Requests } from './requests';
 import { Account, Content, Data, Files, Images, Projects } from './resources';
 import { Shares } from './shares';
 
@@ -42,6 +47,8 @@ export interface App {
   readonly billing: Billing;
   readonly ai: Ai;
   readonly shares: Shares;
+  readonly listings: Listings;
+  readonly requests: Requests;
 }
 
 /** Create the client for one App. */
@@ -61,6 +68,8 @@ export function createApp(config: AppConfig): App {
     billing: new Billing(http, auth),
     ai: new Ai(http),
     shares: new Shares(http),
+    listings: new Listings(http),
+    requests: new Requests(http),
   };
 }
 
@@ -75,6 +84,10 @@ export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn, Waive
 export type { AppConfig, KeyValueStore } from './config';
 export { AiPaused, AllowanceUsed, AppError, SignInRequired } from './errors';
 export type { AiPausedReason } from './errors';
+export { Listings } from './listings';
+export type { Listing, ListingCard, ListingContact, ListingInput, ListingLocation, ListingNotSearchableReason, NearOptions, NearResult } from './listings';
+export { Inbox, Requests } from './requests';
+export type { ListingRequest, NewRequest, RequestListing, RequestListOptions, RequestMessage, RequestParty, RequestRequester, RequestShare, RequestStatus } from './requests';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Images, Projects } from './resources';
 export { Shares } from './shares';
 export type { GuestShare, NewShare, Share, ShareComment, ShareDecision } from './shares';
