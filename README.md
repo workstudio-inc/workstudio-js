@@ -388,8 +388,9 @@ await app.push.devices();                 // their registered devices; setEnable
 - iPhone tokens go by Apple (APNs), Android tokens by Firebase (FCM); pass `apnsEnvironment: 'sandbox'`
   for a development build run from Xcode.
 - `auth.signOut()` forgets the device first (best effort, a few seconds at most); `unregister()` does it
-  by hand. If that cannot reach the platform (offline), the token is kept aside and the next `register()` of a
-  different token tries again first. Deleting the account removes the person's devices.
+  by hand. If that cannot reach the platform (offline), the platform keeps the token until the next person
+  registers it on that phone (the token then moves to them) - the SDK's later retry rarely helps, so the
+  plugin's own unregister below is what actually stops the phone. Deleting the account removes the person's devices.
 - A shared phone: the phone shows a push itself, before the App runs, so `scopeHash` only decides what a tap
   does. On sign-out also call the plugin's own `PushNotifications.unregister()` and clear delivered
   notifications, and always check `isForMe` (then `routeOf`) before acting on a tap.
