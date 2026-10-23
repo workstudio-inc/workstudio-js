@@ -21,6 +21,13 @@ export interface PlanOption {
   prices: PlanPrice[];
   /** What the plan unlocks in the App, in the App's own words (`full_plans`, `proposals`). */
   features?: string[];
+  /** The free trial a checkout of this plan starts with, in days; null when the plan has none. */
+  trialDays?: number | null;
+  /**
+   * Whether this person can still start that trial: the plan has one and they never had a trial of this
+   * App (one per person per App - a cancelled trial does not give another).
+   */
+  trialAvailable?: boolean;
 }
 
 /** The person's plan in the App, and the App's plans. */
@@ -51,6 +58,14 @@ export interface Plan {
   plans: PlanOption[];
   /** What the person's plan unlocks in the App - also in their token, for the App's own server to check. */
   features?: string[];
+  /** When the person's free trial ends (ISO time), while `status` is `trialing`; null otherwise. */
+  trialEndsAt?: string | null;
+  /**
+   * Whether Stripe holds a card for the person's subscription. A trial started without one ends at
+   * `trialEndsAt` and the person drops back to the default plan (their data stays) - say "add a card to
+   * keep Plus" and send them to {@link Billing.manage}.
+   */
+  hasPaymentMethod?: boolean;
 }
 
 export interface CheckoutOptions {
@@ -60,6 +75,11 @@ export interface CheckoutOptions {
   successUrl?: string;
   /** Where Stripe sends them if they go back - on one of the App's own web origins. */
   cancelUrl?: string;
+  /**
+   * Take the plan's free trial, if it has one and the person never had a trial of this App (the default),
+   * or `false` to buy now with no trial.
+   */
+  trial?: boolean;
   /** Go to the page (default), or only return its address for the App to open itself. */
   open?: boolean;
 }
@@ -88,11 +108,18 @@ export class Billing {
 
   /**
    * Buy a plan: Stripe Checkout for one of the App's prices. Goes there (the system browser on a phone,
-   * through `openUrl`) and also returns the address.
+   * through `openUrl`) and also returns the address. A plan with a free trial starts with it, once per
+   * person per App, unless `trial: false`.
    */
   async checkout(options: CheckoutOptions): Promise<string> {
-    const { open = true, ...body } = options;
-    const { url } = await this.http.request<{ url: string }>('POST', this.http.api('/connection/end-users/me/checkout'), body);
+    const { open = true, trial, ...rest } = options;
+    const body: Record<string, unknown> = { ...rest };
+    if (trial !== undefined) body.trial = trial;
+    const { url } = await this.http.request<{ url: string; trialDays?: number | null }>(
+      'POST',
+      this.http.api('/connection/end-users/me/checkout'),
+      body,
+    );
     if (open) await this.go(url);
     return url;
   }

@@ -337,6 +337,13 @@ if (now.canManage) await app.billing.manage({ returnUrl: 'https://crava.me/' });
 - `checkout` refuses (`AppError` 409, `ALREADY_SUBSCRIBED`) while the person already pays: send them
   to `manage()` instead. Pass `open: false` to either to get the address without going there.
 - `app.auth.renew()` gets a fresh platform token at any time.
+- **Free trials**: a plan may start with a free trial (`plans[].trialDays`). `checkout` takes it when the
+  person can still have one (`plans[].trialAvailable` - one trial per person per App; a cancelled trial
+  does not give another), unless you pass `trial: false` to buy now. While it runs, `status` is
+  `trialing` and `trialEndsAt` says when it ends. A trial the publisher lets start without a card
+  ends there and the person drops back to the default plan (their data stays): when `hasPaymentMethod`
+  is false, say "add a card to keep Pro" and send them to `manage()`.
+- **Discount codes**: when the publisher allows them, Stripe Checkout shows a promotion code field.
 - Deleting the account (`account.delete()`) cancels the person's subscription at once.
 - The publisher sets the plans (`PUT .../catalog/integrations/{id}/end-user-access/billing`) and
   connects their Stripe account (`PUT .../end-user-access/billing/stripe-key`, write-only).
@@ -372,4 +379,5 @@ if (ai.paused && ai.reason !== 'allowance') showPaused(new Date(ai.resetAt!));  
 npm install
 npm run build      # emits ESM + CJS + .d.ts to dist/
 npm run typecheck
+npm test           # builds, then runs test/*.test.mjs on dist/ (node:test)
 ```
