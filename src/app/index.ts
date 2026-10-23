@@ -20,6 +20,8 @@
  *   listings  the person's public profile of one kind ("shop"), found by others by ZIP code
  *   requests  asking a listing for something, and the thread both ways; the owner's side is
  *             `requests.inbox`
+ *   push      the person's phone, for the App's push notifications: register its token, forget it
+ *             on sign-out, and their preferences (which kinds, quiet hours)
  *
  * Isolation is the platform's, not the App's: every call carries the person's token, and the person
  * can only ever reach their own install of the App. See https://docs.work.studio.
@@ -31,6 +33,7 @@ import { Chat } from './chat';
 import { type AppConfig, resolve } from './config';
 import { Http } from './http';
 import { Listings } from './listings';
+import { Push } from './push';
 import { Requests } from './requests';
 import { Account, Content, Data, Files, Images, Projects } from './resources';
 import { Shares } from './shares';
@@ -49,6 +52,7 @@ export interface App {
   readonly shares: Shares;
   readonly listings: Listings;
   readonly requests: Requests;
+  readonly push: Push;
 }
 
 /** Create the client for one App. */
@@ -56,6 +60,8 @@ export function createApp(config: AppConfig): App {
   const resolved = resolve(config);
   const auth = new Auth(resolved);
   const http = new Http(resolved, auth);
+  const push = new Push(http, auth.storage, resolved.storageKey, resolved.appId);
+  auth.beforeSignOut(() => push.beforeSignOut());
   return {
     auth,
     account: new Account(http, () => auth.signOut()),
@@ -70,6 +76,7 @@ export function createApp(config: AppConfig): App {
     shares: new Shares(http),
     listings: new Listings(http),
     requests: new Requests(http),
+    push,
   };
 }
 
@@ -86,6 +93,8 @@ export { AiPaused, AllowanceUsed, AppError, SignInRequired } from './errors';
 export type { AiPausedReason } from './errors';
 export { Listings } from './listings';
 export type { Listing, ListingCard, ListingContact, ListingInput, ListingLocation, ListingNotSearchableReason, NearOptions, NearResult } from './listings';
+export { Push } from './push';
+export type { PushData, PushDevice, PushPlatform, PushPreferences, PushTransport, RegisterOptions } from './push';
 export { Inbox, Requests } from './requests';
 export type { ListingRequest, NewRequest, RequestListing, RequestListOptions, RequestMessage, RequestParty, RequestRequester, RequestShare, RequestStatus } from './requests';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Images, Projects } from './resources';
