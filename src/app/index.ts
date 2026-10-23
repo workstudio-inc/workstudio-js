@@ -12,7 +12,8 @@
  *   content   what the App ships - templates, featured designs - at the version their install runs
  *   files     their own photos and PDFs
  *   billing   their plan in the App - buying one (Stripe Checkout) and managing it, paid to the
- *             App's publisher; a plan sets their monthly AI allowance
+ *             App's publisher; a plan sets their monthly AI allowance. `billing.store`: the same plans
+ *             in the App's iOS and Android apps, through the App Store and Google Play
  *   ai        whether AI can be used right now - or is paused (their plan's shared pool, or the
  *             App's own budget, is spent) and until when
  *   shares    a frozen copy of something of theirs, opened by link by someone with no account, who
@@ -85,7 +86,9 @@ export type { AiStatus, AiStatusOptions, AiStatusReason } from './ai';
 export { Auth } from './auth';
 export type { CompletedSignIn, SignedIn, SignInMethod, SignInOptions } from './auth';
 export { Billing } from './billing';
-export type { CheckoutOptions, ManageOptions, Plan, PlanOption, PlanPrice } from './billing';
+export type { CheckoutOptions, ManageLink, ManageOptions, Money, PaidTwiceNotice, Plan, PlanChange, PlanOption, PlanPrice, PlanSource } from './billing';
+export { APPLE_SUBSCRIPTIONS_URL, BillingUnavailable, GOOGLE_SUBSCRIPTIONS_URL, manageTarget, StoreBilling, StorePurchaseOtherAccount, TooManyPurchases, TooManyTries } from './store';
+export type { DeletionCheck, ManageTarget, Restored, RestoredPurchase, RestoreResult, StoreCurrent, StoreOffer, StoreOfferOptions, StoreOfferPlan, StorePlatform, StoreProduct, StorePurchase, StoreRestore, StoreSubscriptionSummary, StoreTrial, WebPrice } from './store';
 export { Chat, Conversation, TurnFailed } from './chat';
 export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn, Waived } from './chat';
 export type { AppConfig, KeyValueStore } from './config';

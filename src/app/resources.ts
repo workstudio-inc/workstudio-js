@@ -1,5 +1,6 @@
 import { AiPaused, AllowanceUsed, AppError } from './errors';
 import type { Http } from './http';
+import type { DeletionCheck } from './store';
 
 // ---------------------------------------------------------------------------------------------
 // Account
@@ -44,9 +45,19 @@ export class Account {
   }
 
   /**
+   * Before {@link Account.delete}: the person's live App Store and Google Play subscriptions. An Apple one
+   * goes on billing after the account is gone until they cancel it in the App Store - say so, with its
+   * manage link, before deleting. Google ones are cancelled by the platform on deletion.
+   */
+  deletionCheck(): Promise<DeletionCheck> {
+    return this.http.request<DeletionCheck>('GET', this.http.api('/connection/end-users/me/delete'));
+  }
+
+  /**
    * Delete the person's account in this App and everything it holds for them - conversations,
    * files, data, usage - then sign out. App stores require this to be possible from inside the app.
-   * Their Google, Apple or email sign-in is not the App's and stays.
+   * Their Google, Apple or email sign-in is not the App's and stays. A website or Google Play subscription
+   * is cancelled; an App Store one cannot be - see {@link Account.deletionCheck}.
    */
   async delete(): Promise<void> {
     await this.http.request<unknown>('POST', this.http.api('/connection/end-users/me/delete'), { confirm: 'DELETE' });
