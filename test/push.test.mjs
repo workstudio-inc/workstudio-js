@@ -2,7 +2,7 @@
 // published: the ./app entry, its exports and the requests it makes.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { AppError, Push, createApp } from '../dist/app.js';
+import { AppError, Push, createApp, routeOf } from '../dist/app.js';
 
 const API = 'https://api.example.test';
 const BASE = `${API}/api/v1/workflow/notification/end-users/me/push`;
@@ -68,13 +68,14 @@ describe('app.push', () => {
     await assert.rejects(app.push.register('t', 'ios'), e => e instanceof AppError && e.status === 403 && e.code === 'NOT_AN_END_USER');
   });
 
-  it('unregister: DELETE the remembered token, encoded; then nothing more to forget', async () => {
+  it('unregister: POST the remembered token in the body, never the URL; then nothing more to forget', async () => {
     const { app, calls } = client([{ body: DEVICE }, { status: 204 }]);
     await app.push.register('tok/with+chars', 'ios');
     await app.push.unregister();
-    assert.equal(calls[1].method, 'DELETE');
-    assert.equal(calls[1].url, `${BASE}/devices?token=${encodeURIComponent('tok/with+chars')}`);
-    assert.equal(calls[1].body, undefined);
+    assert.equal(calls[1].method, 'POST');
+    assert.equal(calls[1].url, `${BASE}/devices/unregister`);
+    assert.deepEqual(calls[1].body, { token: 'tok/with+chars' });
+    assert.ok(!calls[1].url.includes('tok'));
     await app.push.unregister();
     assert.equal(calls.length, 2);
   });
@@ -84,7 +85,8 @@ describe('app.push', () => {
     await app.push.unregister();
     assert.equal(calls.length, 0);
     await app.push.unregister('other');
-    assert.equal(calls[0].url, `${BASE}/devices?token=other`);
+    assert.equal(calls[0].url, `${BASE}/devices/unregister`);
+    assert.deepEqual(calls[0].body, { token: 'other' });
   });
 
   it('devices and setEnabled', async () => {
@@ -133,10 +135,11 @@ describe('app.push', () => {
     const { app, calls, storage } = client([{ body: DEVICE }, { status: 204 }]);
     await app.push.register('tok-1', 'ios');
     await app.auth.signOut();
-    assert.equal(calls[1].method, 'DELETE');
-    assert.equal(calls[1].url, `${BASE}/devices?token=tok-1`);
+    assert.equal(calls[1].method, 'POST');
+    assert.equal(calls[1].url, `${BASE}/devices/unregister`);
+    assert.deepEqual(calls[1].body, { token: 'tok-1' });
     assert.equal(calls[1].headers.Authorization, 'Bearer person-token');
-    assert.equal([...storage.m.keys()].some(k => k.endsWith('.push')), false);
+    assert.equal([...storage.m.keys()].some(k => k.includes('.push')), false, 'nothing kept: no pending unregister either');
     assert.equal(await app.push.isForMe({ scopeHash: HASH }), false);
   });
 
@@ -160,5 +163,55 @@ describe('app.push', () => {
     const { app, calls } = client();
     await app.auth.signOut();
     assert.equal(calls.length, 0);
+  });
+
+  it('a sign-out that could not forget the device keeps it aside; the next register of another token retries it first', async () => {
+    const { app, calls, storage } = client([{ body: DEVICE }, { status: 500, body: {} }, { status: 204 }, { body: DEVICE }]);
+    await app.push.register('old-tok', 'ios');
+    await app.auth.signOut();
+    assert.ok([...storage.m.keys()].some(k => k.endsWith('.push.pending')));
+    await app.push.register('new-tok', 'ios');
+    assert.equal(calls[2].url, `${BASE}/devices/unregister`);
+    assert.deepEqual(calls[2].body, { token: 'old-tok' });
+    assert.equal(calls[3].url, `${BASE}/devices`);
+    assert.equal(calls[3].body.token, 'new-tok');
+    assert.equal([...storage.m.keys()].some(k => k.endsWith('.push.pending')), false);
+  });
+
+  it('the retried unregister failing does not stop the register, and is not tried again', async () => {
+    const { app, calls, storage } = client([{ body: DEVICE }, { status: 500, body: {} }, { status: 403, body: { code: 'NOT_YOURS' } }, { body: DEVICE }, { body: DEVICE }]);
+    await app.push.register('old-tok', 'ios');
+    await app.auth.signOut();
+    const d = await app.push.register('new-tok', 'android');
+    assert.deepEqual(d, DEVICE);
+    assert.equal([...storage.m.keys()].some(k => k.endsWith('.push.pending')), false);
+    await app.push.register('new-tok', 'android');
+    assert.equal(calls.length, 5);
+    assert.equal(calls[4].url, `${BASE}/devices`);
+  });
+
+  it('the same token registered again after a failed sign-out is just registered (to whoever is signed in now)', async () => {
+    const { app, calls, storage } = client([{ body: DEVICE }, { status: 500, body: {} }, { body: DEVICE }]);
+    await app.push.register('tok', 'ios');
+    await app.auth.signOut();
+    await app.push.register('tok', 'ios');
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2].url, `${BASE}/devices`);
+    assert.equal([...storage.m.keys()].some(k => k.endsWith('.push.pending')), false);
+  });
+
+  it('routeOf: only a route in the App, never another site', () => {
+    const { app } = client();
+    for (const ok of ['#inbox/123', '#requests/abc-1', '/proposals/x_y', '#a']) {
+      assert.equal(routeOf({ open: ok }), ok, ok);
+      assert.equal(app.push.routeOf({ open: ok }), ok, ok);
+    }
+    const BS = String.fromCharCode(92);
+    for (const bad of ['//evil.example', '/' + BS + 'evil.example', '#x' + BS + 'y', 'https://evil.example', 'javascript:alert(1)', '#', '/', '# x', '#a b',
+      '#a	b', '#a', '/.x', '#' + 'a'.repeat(200), '', 1, null]) {
+      assert.equal(routeOf({ open: bad }), null, String(bad));
+    }
+    assert.equal(routeOf(null), null);
+    assert.equal(routeOf({}), null);
   });
 });

@@ -72,6 +72,21 @@ interface Remembered {
 /** How long sign-out waits for the device to be forgotten before going on regardless. */
 const SIGN_OUT_WAIT_MS = 3_000;
 
+/** A route in the App: # or / and then a route character - never another site (`//host`, `https:`) or a backslash. */
+const ROUTE = /^[#/][A-Za-z0-9_-]/;
+
+/**
+ * Where a push wants a tap to go, when that is a route in the App - `data.open` such as `#inbox/123` - or null.
+ * Anything else (`//evil.example`, `https://...`, `javascript:`, a backslash, spaces, over 200 characters) is null,
+ * so the App never navigates off-site because of a push. Check {@link Push.isForMe} first.
+ */
+export function routeOf(data: PushData | Record<string, unknown> | null | undefined): string | null {
+  const open = data && typeof data === 'object' ? data.open : undefined;
+  if (typeof open !== 'string' || open.length > 200 || !ROUTE.test(open)) return null;
+  if (/[\s\\]/.test(open) || /[\u0000-\u001f\u007f]/.test(open)) return null;
+  return open;
+}
+
 /**
  * Push notifications to the person's phone, from the App's own automations ("a new quote request").
  *
@@ -79,12 +94,21 @@ const SIGN_OUT_WAIT_MS = 3_000;
  * here after sign-in, on every launch; the platform keeps it for this person in this App only, and sends with
  * the App's own Apple and Firebase credentials. Signing out forgets it. Nothing here asks the phone for
  * permission - that is the App's to do, at a moment the person understands why.
+ *
+ * A shared phone: the phone shows a push itself, before the App runs - `scopeHash` only decides what the App does
+ * when it is tapped. So on sign-out the App should also call its push plugin's own unregister
+ * (`PushNotifications.unregister()` in Capacitor) and clear delivered notifications
+ * (`PushNotifications.removeAllDeliveredNotifications()`), and check {@link Push.isForMe} - then {@link routeOf} -
+ * before acting on a tap. When forgetting the device fails at sign-out (offline), the next {@link Push.register}
+ * tries again for that old token first.
  */
 export class Push {
   private readonly key: string;
+  private readonly pendingKey: string;
 
   constructor(private readonly http: Http, private readonly store: KeyValueStore, storageKey: string, private readonly appId?: string) {
     this.key = `${storageKey}.push`;
+    this.pendingKey = `${storageKey}.push.pending`;
   }
 
   /** This person's preferences for pushes from this App. */
@@ -111,6 +135,7 @@ export class Push {
     if (options.apnsEnvironment) body.apnsEnvironment = options.apnsEnvironment;
     if (options.deviceName) body.deviceName = options.deviceName;
     if (options.appVersion) body.appVersion = options.appVersion;
+    await this.retryPending(token);
     const device = await this.http.request<PushDevice>('POST', this.url('/devices'), body);
     await this.remember({ token, scopeHash: device?.scopeHash });
     return device;
@@ -124,7 +149,8 @@ export class Push {
     const remembered = await this.remembered();
     const which = token ?? remembered.token;
     if (!which) return;
-    await this.http.request<void>('DELETE', this.url(`/devices?token=${encodeURIComponent(which)}`));
+    // In the body, never the address: a token in a URL ends up in access logs.
+    await this.http.request<void>('POST', this.url('/devices/unregister'), { token: which });
     if (!token || token === remembered.token) await this.forget();
   }
 
@@ -151,18 +177,46 @@ export class Push {
     return true;
   }
 
-  /** Forget this device before signing out: best effort, and never longer than a few seconds. */
+  /** Where a push wants a tap to go, when that is a route in the App; null otherwise. See {@link routeOf}. */
+  routeOf(data: PushData | Record<string, unknown> | null | undefined): string | null {
+    return routeOf(data);
+  }
+
+  /**
+   * Forget this device before signing out: best effort, and never longer than a few seconds. When that does not
+   * finish, the token is kept aside and the next {@link register} tries again.
+   */
   async beforeSignOut(): Promise<void> {
     const { token } = await this.remembered();
     if (!token) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let forgotten = false;
     const waited = new Promise<void>(done => (timer = setTimeout(done, SIGN_OUT_WAIT_MS)));
     try {
-      await Promise.race([this.unregister(token).catch(() => undefined), waited]);
+      await Promise.race([this.unregister(token).then(() => (forgotten = true), () => undefined), waited]);
     } finally {
       if (timer) clearTimeout(timer);
       await this.forget();
+      if (!forgotten) await this.write(this.pendingKey, { token });
     }
+  }
+
+  /**
+   * A token sign-out could not forget: try once more before registering a different one - best effort (it only
+   * works while the same person is signed in, and is harmless otherwise) - then drop it. The same token is simply
+   * registered again, to whoever is signed in now.
+   */
+  private async retryPending(token: string): Promise<void> {
+    const pending = (await this.read(this.pendingKey)).token;
+    if (!pending) return;
+    if (pending !== token) {
+      try {
+        await this.http.request<void>('POST', this.url('/devices/unregister'), { token: pending });
+      } catch {
+        /* someone else is signed in now, or still offline: let it go */
+      }
+    }
+    await this.remove(this.pendingKey);
   }
 
   private url(path: string) {
@@ -177,26 +231,38 @@ export class Push {
     return p;
   }
 
-  private async remembered(): Promise<Remembered> {
+  private remembered(): Promise<Remembered> {
+    return this.read(this.key);
+  }
+
+  private remember(r: Remembered): Promise<void> {
+    return this.write(this.key, r);
+  }
+
+  private forget(): Promise<void> {
+    return this.remove(this.key);
+  }
+
+  private async read(key: string): Promise<Remembered> {
     try {
-      const raw = await this.store.getItem(this.key);
+      const raw = await this.store.getItem(key);
       return raw ? (JSON.parse(raw) as Remembered) : {};
     } catch {
       return {};
     }
   }
 
-  private async remember(r: Remembered): Promise<void> {
+  private async write(key: string, r: Remembered): Promise<void> {
     try {
-      await this.store.setItem(this.key, JSON.stringify(r));
+      await this.store.setItem(key, JSON.stringify(r));
     } catch {
       /* storage refused: the device stays registered on the platform, sign-out just cannot forget it */
     }
   }
 
-  private async forget(): Promise<void> {
+  private async remove(key: string): Promise<void> {
     try {
-      await this.store.removeItem(this.key);
+      await this.store.removeItem(key);
     } catch {
       /* nothing to do */
     }
