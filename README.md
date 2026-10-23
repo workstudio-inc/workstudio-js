@@ -350,6 +350,55 @@ if (now.canManage) await app.billing.manage({ returnUrl: 'https://crava.me/' });
 - Phone apps: app stores have their own rules for selling digital goods in an app; check them before
   offering `checkout` inside a phone build.
 
+### Push notifications to the person's phone
+
+A phone build can have the App's automations push to the person ("New quote request") - sent with the
+App's own Apple and Firebase credentials, which the publisher sets in the App's Push settings. The SDK
+does not touch the phone: the App asks for permission (at a moment the person sees why), gets the token,
+and hands it over after sign-in, on every launch.
+
+```ts
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
+
+PushNotifications.addListener('registration', t =>
+  app.push.register(t.value, Capacitor.getPlatform() as 'ios' | 'android', { appVersion: '1.4.0' }));
+PushNotifications.addListener('pushNotificationActionPerformed', async ({ notification }) => {
+  // Only act on pushes for the person signed in here (a shared phone can hold someone else's), and only go to
+  // a route in the App - routeOf is null for anything else (another site, a backslash, a space).
+  if (!(await app.push.isForMe(notification.data))) return;
+  const route = app.push.routeOf(notification.data);   // e.g. #inbox/<id>
+  if (route) location.hash = route.startsWith('#') ? route : `#${route}`;
+});
+if ((await PushNotifications.requestPermissions()).receive === 'granted') await PushNotifications.register();
+
+// Signing out: the SDK forgets the device on the platform; the phone's own registration and the
+// notifications already on screen are the App's to clear.
+async function signOut() {
+  await app.auth.signOut();
+  await PushNotifications.removeAllDeliveredNotifications();
+  await PushNotifications.unregister();
+}
+
+await app.push.preferences.set({ categories: { proposals: false }, quietStart: '22:00', quietEnd: '07:00',
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+await app.push.devices();                 // their registered devices; setEnabled(id, false) silences one
+```
+
+- iPhone tokens go by Apple (APNs), Android tokens by Firebase (FCM); pass `apnsEnvironment: 'sandbox'`
+  for a development build run from Xcode.
+- `auth.signOut()` forgets the device first (best effort, a few seconds at most); `unregister()` does it
+  by hand. If that cannot reach the platform (offline), the platform keeps the token until the next person
+  registers it on that phone (the token then moves to them) - the SDK's later retry rarely helps, so the
+  plugin's own unregister below is what actually stops the phone. Deleting the account removes the person's devices.
+- A shared phone: the phone shows a push itself, before the App runs, so `scopeHash` only decides what a tap
+  does. On sign-out also call the plugin's own `PushNotifications.unregister()` and clear delivered
+  notifications, and always check `isForMe` (then `routeOf`) before acting on a tap.
+- A lock screen is public: pushes carry names and titles, never what someone wrote. `data.open` is an
+  App-relative route; `data.scopeHash` says whom it is for.
+- On Android, the channel an automation names must exist in the app (`PushNotifications.createChannel`).
+- No device, pushes turned off, or quiet hours: the automation's email goes instead, when it has one.
+
 ### When AI is paused
 
 Besides each person's allowance, a publisher can cap what all the people on a plan spend together

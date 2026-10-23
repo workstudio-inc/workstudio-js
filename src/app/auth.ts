@@ -108,9 +108,24 @@ export class Auth {
   private loaded: Promise<void> | null = null;
   private refreshing: Promise<string | null> | null = null;
   private readonly listeners = new Set<(who: SignedIn | null) => void>();
+  private readonly signingOut = new Set<() => Promise<void>>();
 
   constructor(private readonly config: ResolvedConfig) {
     this.store = config.storage ?? defaultStore();
+  }
+
+  /** @internal Where the sign-in is kept - other parts of the SDK keep their own few values beside it. */
+  get storage(): KeyValueStore {
+    return this.store;
+  }
+
+  /**
+   * @internal Run before signing out, while the person is still signed in (push forgets this device).
+   * Each is awaited but may not fail the sign-out; keep them short.
+   */
+  beforeSignOut(hook: () => Promise<void>): () => void {
+    this.signingOut.add(hook);
+    return () => this.signingOut.delete(hook);
   }
 
   private get key() {
@@ -244,6 +259,13 @@ export class Auth {
    */
   async signOut(): Promise<void> {
     await this.load();
+    for (const hook of [...this.signingOut]) {
+      try {
+        await hook();
+      } catch {
+        /* never stops a sign-out */
+      }
+    }
     const refreshToken = this.current?.refreshToken;
     await this.save(null);
     this.endHostedSession(refreshToken);
