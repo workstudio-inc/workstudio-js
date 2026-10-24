@@ -1,5 +1,6 @@
 import type { Http } from './http';
-import { AiPaused, AllowanceUsed, AppError, SignInRequired } from './errors';
+import { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, SignInRequired } from './errors';
+import { read as readCredits, type CreditBalance } from './credits';
 
 /** One of the person's conversations, as listed. */
 export interface ConversationSummary {
@@ -57,6 +58,10 @@ export interface Reply {
   notCharged?: boolean;
   /** True when the App may still waive this turn's charge (for a few minutes after it). */
   waivable?: boolean;
+  /** An App with credits: the balance after this turn (also handed to `credits.onChange`). */
+  credits?: CreditBalance;
+  /** Whole credits this turn used, after any refund. */
+  creditsUsed?: number;
 }
 
 /** The outcome of `waive()`. */
@@ -130,7 +135,7 @@ export class Conversation {
     const decoder = new TextDecoder();
     let buffer = '';
     let streamed = '';
-    let turn: { turnRef?: string; notCharged?: boolean; waivable?: boolean } = {};
+    let turn: { turnRef?: string; notCharged?: boolean; waivable?: boolean; credits?: CreditBalance; creditsUsed?: number } = {};
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -152,6 +157,13 @@ export class Conversation {
             notCharged: event.notCharged === true,
             waivable: event.waivable === true,
           };
+        } else if (event.type === 'credits') {
+          // The person's credits after the turn (an App with credits); arrives just before done/error.
+          const credits = readCredits(event);
+          if (credits) {
+            turn = { ...turn, credits, creditsUsed: credits.used };
+            this.http.creditsSeen(event);
+          }
         } else if (event.type === 'token' && typeof event.content === 'string') {
           streamed += event.content;
           options.onText?.(event.content);
@@ -162,6 +174,9 @@ export class Conversation {
         } else if (event.type === 'error') {
           const code = String(event.errorCode ?? event.code ?? '');
           const msg = typeof event.message === 'string' ? event.message : undefined;
+          // The person's credits cannot start a turn now: shown as "out of credits", never as an error.
+          const outOfCredits = CreditsUsedUp.from(event, msg);
+          if (outOfCredits) throw this.http.paused(outOfCredits);
           // The App's AI paused (its plan's shared pool, or the App's own budget) - not the person's allowance.
           const paused = AiPaused.from(event, msg);
           if (paused) throw this.http.paused(paused);
@@ -232,6 +247,8 @@ export class Chat {
       });
     } catch (e) {
       if (e instanceof SignInRequired) throw e;
+      const outOfCredits = e instanceof AppError ? CreditsUsedUp.from(e.details ?? { code: e.code }, e.message) : null;
+      if (outOfCredits) throw this.http.paused(outOfCredits);
       const paused = e instanceof AppError ? AiPaused.from(e.details, e.message) : null;
       if (paused) throw this.http.paused(paused);
       if (e instanceof AppError && /allowance/i.test(e.message)) throw new AllowanceUsed(e.message);

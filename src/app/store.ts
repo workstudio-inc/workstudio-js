@@ -194,6 +194,11 @@ export interface DeletionCheck {
   storeSubscriptions: StoreSubscriptionSummary[];
   appleSubscription: boolean;
   googleSubscription: boolean;
+  /**
+   * Credits the person bought and has not used, which deleting the account removes ("You have 340 credits you bought.
+   * Deleting your account removes them, and they can't be refunded."). Null or absent: none.
+   */
+  credits?: { bought: number; name: string } | null;
 }
 
 // ---------------------------------------------------------------------------------------------

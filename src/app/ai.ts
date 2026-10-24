@@ -2,7 +2,7 @@ import { AppError, SignInRequired } from './errors';
 import type { Http } from './http';
 
 /** Why AI cannot be used right now. */
-export type AiStatusReason = 'allowance' | 'app_budget' | 'pool';
+export type AiStatusReason = 'allowance' | 'app_budget' | 'pool' | 'credits';
 
 /** Whether the person can use AI in the App right now. */
 export interface AiStatus {
@@ -11,13 +11,14 @@ export interface AiStatus {
   /**
    * Why: `allowance` - their own monthly allowance is used ({@link AllowanceUsed} on a request);
    * `pool` - their plan's shared pool is spent; `app_budget` - the App's own AI budget is
-   * (both {@link AiPaused}). Null when not paused.
+   * (both {@link AiPaused}); `credits` - the person's credits cannot start anything now ({@link CreditsUsedUp}).
+   * Null when not paused.
    */
   reason: AiStatusReason | null;
-  /** The code a refused request carries: ALLOWANCE_USED, APP_FREE_POOL_PAUSED or APP_AI_PAUSED. */
+  /** The code a refused request carries: ALLOWANCE_USED, APP_FREE_POOL_PAUSED, APP_AI_PAUSED or CREDITS_USED_UP. */
   code?: string;
-  /** Which limit: today's or this month's. */
-  scope?: 'day' | 'month';
+  /** Which limit: today's or this month's; `once` for starter credits that do not come back. */
+  scope?: 'day' | 'month' | 'once';
   /** When AI is back, ISO 8601 in UTC. Show it in the person's own time. */
   resetAt?: string;
   /** The person's plan in the App, when known. */
@@ -118,14 +119,15 @@ function expired(status: AiStatus, now: number): boolean {
 }
 
 function read(body: Record<string, unknown>): AiStatus {
-  const reason = body.reason === 'allowance' || body.reason === 'app_budget' || body.reason === 'pool' ? body.reason : null;
+  const reason = body.reason === 'allowance' || body.reason === 'app_budget' || body.reason === 'pool' || body.reason === 'credits'
+    ? body.reason : null;
   const paused = body.paused === true && reason !== null;
   const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
   return {
     paused,
     reason: paused ? reason : null,
     code: str(body.code),
-    scope: body.scope === 'day' || body.scope === 'month' ? body.scope : undefined,
+    scope: body.scope === 'day' || body.scope === 'month' || body.scope === 'once' ? body.scope : undefined,
     resetAt: str(body.resetAt),
     plan: str(body.plan),
     message: str(body.message),

@@ -14,6 +14,8 @@
  *   billing   their plan in the App - buying one (Stripe Checkout) and managing it, paid to the
  *             App's publisher; a plan sets their monthly AI allowance. `billing.store`: the same plans
  *             in the App's iOS and Android apps, through the App Store and Google Play
+ *   credits   an App with credits: one balance every action draws on (monthly first, then bought ones,
+ *             which never expire), "about N" estimates, credit packs and their history
  *   ai        whether AI can be used right now - or is paused (their plan's shared pool, or the
  *             App's own budget, is spent) and until when
  *   shares    a frozen copy of something of theirs, opened by link by someone with no account, who
@@ -30,6 +32,7 @@
 import { Ai } from './ai';
 import { Auth } from './auth';
 import { Billing } from './billing';
+import { Credits } from './credits';
 import { Chat } from './chat';
 import { type AppConfig, resolve } from './config';
 import { Http } from './http';
@@ -49,6 +52,8 @@ export interface App {
   readonly files: Files;
   readonly images: Images;
   readonly billing: Billing;
+  /** The person's credits (an App with credits): balance, "about N", packs and history. */
+  readonly credits: Credits;
   readonly ai: Ai;
   readonly shares: Shares;
   readonly listings: Listings;
@@ -73,6 +78,7 @@ export function createApp(config: AppConfig): App {
     files: new Files(http),
     images: new Images(http),
     billing: new Billing(http, auth),
+    credits: new Credits(http),
     ai: new Ai(http),
     shares: new Shares(http),
     listings: new Listings(http),
@@ -89,10 +95,12 @@ export { Billing } from './billing';
 export type { CheckoutOptions, ManageLink, ManageOptions, Money, PaidTwiceNotice, Plan, PlanChange, PlanOption, PlanPrice, PlanSource } from './billing';
 export { APPLE_SUBSCRIPTIONS_URL, BillingUnavailable, GOOGLE_SUBSCRIPTIONS_URL, manageTarget, StoreBilling, StorePurchaseOtherAccount, TooManyPurchases, TooManyTries } from './store';
 export type { DeletionCheck, ManageTarget, Restored, RestoredPurchase, RestoreResult, StoreCurrent, StoreOffer, StoreOfferOptions, StoreOfferPlan, StorePlatform, StoreProduct, StorePurchase, StoreRestore, StoreSubscriptionSummary, StoreTrial, WebPrice } from './store';
+export { Credits } from './credits';
+export type { BuyOptions, CreditBalance, CreditEstimate, CreditEstimateOptions, CreditHistory, CreditHistoryEntry, CreditPack, CreditPacks, CreditPacksOptions, CreditPacksWhy, CreditsOptions, CreditUnit } from './credits';
 export { Chat, Conversation, TurnFailed } from './chat';
 export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn, Waived } from './chat';
 export type { AppConfig, KeyValueStore } from './config';
-export { AiPaused, AllowanceUsed, AppError, SignInRequired } from './errors';
+export { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, NotForYourPlan, SignInRequired } from './errors';
 export type { AiPausedReason } from './errors';
 export { Listings } from './listings';
 export type { Listing, ListingCard, ListingContact, ListingInput, ListingLocation, ListingNotSearchableReason, NearOptions, NearResult } from './listings';
