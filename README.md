@@ -348,11 +348,136 @@ if (now.canManage) await app.billing.manage({ returnUrl: 'https://crava.me/' });
   ends there and the person drops back to the default plan (their data stays): when `hasPaymentMethod`
   is false, say "add a card to keep Pro" and send them to `manage()`.
 - **Discount codes**: when the publisher allows them, Stripe Checkout shows a promotion code field.
-- Deleting the account (`account.delete()`) cancels the person's subscription at once.
+- Deleting the account (`account.delete()`) cancels the person's website subscription at once. For App
+  Store and Google Play subscriptions, see `account.deletionCheck()` below.
 - The publisher sets the plans (`PUT .../catalog/integrations/{id}/end-user-access/billing`) and
   connects their Stripe account (`PUT .../end-user-access/billing/stripe-key`, write-only).
-- Phone apps: app stores have their own rules for selling digital goods in an app; check them before
-  offering `checkout` inside a phone build.
+- Phone apps: don't offer `checkout` inside an iOS or Android build. Sell there through the App Store
+  and Google Play with `billing.store` (next section).
+- `checkout` refuses (`AppError` 409, `STORE_SUBSCRIPTION_LIVE`) while the person subscribes through the
+  App Store or Google Play. The upgrade happens in the store where they subscribed.
+
+### Plans in the iOS and Android apps (App Store and Google Play)
+
+The same plans can be bought in the App's own phone apps, through the App Store and Google Play. Each
+plan maps to a store product per interval; the publisher sets this in the manifest's `plans` step. The
+SDK never touches StoreKit or Play Billing. The app buys with its own plugin (for example
+`@capgo/native-purchases`) and hands the SDK what the store returned. The platform verifies every
+purchase with Apple or Google; nothing the app says about a purchase is trusted. A person has one plan
+however they bought it, on every device and on the web.
+
+```ts
+// 1. The paywall. Ask each time it opens: the publisher can change it without an app release.
+const offer = await app.billing.store.offer({
+  platform: 'ios',
+  storefront: storefront.countryCode,         // iOS alpha-3 'USA'; Android alpha-2 'US'
+  appTransactionId,                           // iOS: AppTransaction.shared.appTransactionID (optional)
+});
+// { storeAccountToken, canBuy, message?, cancelsCurrent, upgradeNotice?, trial?, current?, linkOut?,
+//   plans: [{ id: 'pro', name: 'Crava Pro', canBuy: true,
+//             products: [{ interval: 'month', apple: { productId: 'me.crava.pro.monthly',
+//                                                     introductoryOfferEligibilityJws?: '...' },
+//                          webPrice?: { amount: 4900, currency: 'usd', interval: 'month' } }] }] }
+if (!offer.canBuy) showMessage(offer.message!);            // e.g. "You have Crava Plus. Manage it where you subscribed."
+if (offer.cancelsCurrent) confirm(offer.upgradeNotice!);   // shown before buying: the website plan is cancelled and refunded
+
+// 2. Buy with the plugin. Show the store's own localized price, never a catalog price.
+//    iOS: appAccountToken = offer.storeAccountToken, and .introductoryOfferEligibility(compactJWS:) when given.
+//    Android: obfuscatedAccountId = offer.storeAccountToken; the offer token of products[].google.offerId when
+//    present, else the base plan's.
+const tx = await buyWithYourPlugin(/* ... */);
+
+// 3. Hand it over. The platform verifies it, makes it the person's, and the SDK gets a token with the new
+//    allowance. Finish the transaction once this returns.
+const plan = await app.billing.store.verify({ platform: 'ios', jws: tx.jwsRepresentation });
+// Android: verify({ platform: 'android', purchaseToken })
+
+// "Restore purchases" (Apple requires the button): everything the store has, in one call.
+const { plan: restored, items } = await app.billing.store.restore({ platform: 'ios', jws: entitlements });
+// Android: restore({ platform: 'android', purchaseTokens }); items: [{ id, result, purchase }]
+
+// Managing: where the plan in force lives decides what to open.
+const where = app.billing.store.manage(plan);
+if (where?.kind === 'apple') await NativePurchases.manageSubscriptions();   // StoreKit; else open where.fallbackUrl
+else if (where?.kind === 'google') await Browser.open({ url: where.url });
+else if (where?.kind === 'stripe_portal') await app.billing.manage();
+```
+
+- **Link-out** (US App Store only, when the publisher turns it on): `offer.linkOut.url` is the website's
+  plans page, to open in the system browser beside in-app purchase, never instead of it. Each product
+  then carries `webPrice` ("$11.99 here, or $9.99 on crava.me"). Everywhere else there is no `linkOut`
+  and no `webPrice`, and `message` and `upgradeNotice` never name the website. The server decides, so
+  stale app copy can't break a store rule. Google Play link-out is not available yet.
+- **Trials**: one free trial per person per App, across the web and both stores. On iOS pass
+  `appTransactionId` so Apple is told (`trial.enforced`); on Android `offerId` is there only while the
+  trial is unused.
+- **Plan fields**: `source` (`web`, `apple`, `google`), `manage`, `otherPaying`, `paidTwice`,
+  `paidTwiceNotice` and `next` (a downgrade made in the store: "Plus from <date>").
+- **Paying twice** (the website and a store at once): the platform cancels the website subscription and
+  refunds its unused part. `paidTwiceNotice` is the banner: `auto_cancelled` with the `refund`, or
+  `failed`. With `failed`, offer "Cancel the website subscription": `app.billing.resolvePaidTwice()`.
+- **Errors**:
+  - `StorePurchaseOtherAccount` (409): the Apple ID or Google account's subscription belongs to another
+    account in this App. Show its `message` ("Sign in with that account"); the other account is never
+    named.
+  - `TooManyTries` (429): more than 30 verifies or 6 restores in 10 minutes.
+  - `TooManyPurchases` (400): more than 20 purchases in one restore.
+  - `BillingUnavailable` (503, `UNAVAILABLE` or `STORE_UNAVAILABLE`): try again shortly. The store
+    keeps the purchase, so verify it later.
+  - `AppError` with `STORE_PURCHASE_INVALID`, `UNKNOWN_PRODUCT` or `NO_PURCHASE` otherwise.
+- **Deleting the account**: call `app.account.deletionCheck()` first. With `appleSubscription`, tell the
+  person Apple keeps billing until they cancel in the App Store, and offer
+  `billing.store.manage(sub.manage)`, then delete if they confirm (Apple guideline 5.1.1(v)). The
+  platform cancels Google Play subscriptions on deletion.
+
+### Push notifications to the person's phone
+
+A phone build can have the App's automations push to the person ("New quote request") - sent with the
+App's own Apple and Firebase credentials, which the publisher sets in the App's Push settings. The SDK
+does not touch the phone: the App asks for permission (at a moment the person sees why), gets the token,
+and hands it over after sign-in, on every launch.
+
+```ts
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
+
+PushNotifications.addListener('registration', t =>
+  app.push.register(t.value, Capacitor.getPlatform() as 'ios' | 'android', { appVersion: '1.4.0' }));
+PushNotifications.addListener('pushNotificationActionPerformed', async ({ notification }) => {
+  // Only act on pushes for the person signed in here (a shared phone can hold someone else's), and only go to
+  // a route in the App - routeOf is null for anything else (another site, a backslash, a space).
+  if (!(await app.push.isForMe(notification.data))) return;
+  const route = app.push.routeOf(notification.data);   // e.g. #inbox/<id>
+  if (route) location.hash = route.startsWith('#') ? route : `#${route}`;
+});
+if ((await PushNotifications.requestPermissions()).receive === 'granted') await PushNotifications.register();
+
+// Signing out: the SDK forgets the device on the platform; the phone's own registration and the
+// notifications already on screen are the App's to clear.
+async function signOut() {
+  await app.auth.signOut();
+  await PushNotifications.removeAllDeliveredNotifications();
+  await PushNotifications.unregister();
+}
+
+await app.push.preferences.set({ categories: { proposals: false }, quietStart: '22:00', quietEnd: '07:00',
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+await app.push.devices();                 // their registered devices; setEnabled(id, false) silences one
+```
+
+- iPhone tokens go by Apple (APNs), Android tokens by Firebase (FCM); pass `apnsEnvironment: 'sandbox'`
+  for a development build run from Xcode.
+- `auth.signOut()` forgets the device first (best effort, a few seconds at most); `unregister()` does it
+  by hand. If that cannot reach the platform (offline), the platform keeps the token until the next person
+  registers it on that phone (the token then moves to them) - the SDK's later retry rarely helps, so the
+  plugin's own unregister below is what actually stops the phone. Deleting the account removes the person's devices.
+- A shared phone: the phone shows a push itself, before the App runs, so `scopeHash` only decides what a tap
+  does. On sign-out also call the plugin's own `PushNotifications.unregister()` and clear delivered
+  notifications, and always check `isForMe` (then `routeOf`) before acting on a tap.
+- A lock screen is public: pushes carry names and titles, never what someone wrote. `data.open` is an
+  App-relative route; `data.scopeHash` says whom it is for.
+- On Android, the channel an automation names must exist in the app (`PushNotifications.createChannel`).
+- No device, pushes turned off, or quiet hours: the automation's email goes instead, when it has one.
 
 ### When AI is paused
 

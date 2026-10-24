@@ -1,5 +1,46 @@
 import type { Auth } from './auth';
 import type { Http } from './http';
+import { billingError, StoreBilling } from './store';
+
+/** Where the plan in force is paid: the website (the publisher's Stripe), the App Store or Google Play. */
+export type PlanSource = 'web' | 'apple' | 'google';
+
+/**
+ * Where the person manages the plan in force. `stripe_portal`: {@link Billing.manage}. `apple`: StoreKit's
+ * `showManageSubscriptions`, with `url` the App Store's page as a fallback. `google`: open `url`, Play's page
+ * for the subscription. `billing.store.manage(plan)` turns it into what to open.
+ */
+export interface ManageLink {
+  kind: 'stripe_portal' | 'apple' | 'google';
+  url?: string | null;
+}
+
+/** An amount in the currency's smallest unit (412 is $4.12), and the ISO 4217 currency, lower case. */
+export interface Money {
+  amount: number;
+  currency: string;
+}
+
+/**
+ * The person paid twice - on the website and in a store - and the platform put it right (or could not).
+ * `auto_cancelled`: the website subscription was cancelled and `refund` given back (shown for 30 days;
+ * no `refund` when it could not be refunded automatically). `failed`: still paying twice - offer
+ * {@link Billing.resolvePaidTwice} ("Cancel the website subscription"). `coveredBy`: the store that now
+ * holds the plan.
+ */
+export interface PaidTwiceNotice {
+  resolution: 'auto_cancelled' | 'failed';
+  refund?: Money | null;
+  coveredBy: 'apple' | 'google';
+  at: string;
+}
+
+/** A change made in the store that takes effect at renewal: "Plus from <date>". */
+export interface PlanChange {
+  plan: string;
+  name: string | null;
+  from: string;
+}
 
 /** One way to pay for a plan: a Stripe price on the App publisher's account. */
 export interface PlanPrice {
@@ -41,7 +82,10 @@ export interface Plan {
   monthlyBudgetUsd: number | null;
   /** Whether it is a paid plan. */
   paid: boolean;
-  /** Stripe's subscription status: `active`, `trialing`, `past_due`, `canceled`...; null when nothing was bought. */
+  /**
+   * The subscription's status: `active`, `trialing`, `past_due`, `canceled`... (a store subscription's too:
+   * `grace` while the store retries a payment); null when nothing was bought.
+   */
   status: string | null;
   /** When a paid plan renews (ISO time) - null when it is cancelling. */
   renewsAt: string | null;
@@ -49,7 +93,10 @@ export interface Plan {
   endsAt: string | null;
   /** Cancelled in the portal: the plan stays until `endsAt`, then the default plan. */
   cancelAtPeriodEnd: boolean;
-  /** Whether {@link Billing.checkout} can be offered: the App takes payments and the person has no paid plan. */
+  /**
+   * Whether {@link Billing.checkout} can be offered: the App takes payments and the person has no paid plan -
+   * false too while an App Store or Google Play subscription is live.
+   */
   canUpgrade: boolean;
   /** Whether {@link Billing.manage} can be offered: the person has bought something. */
   canManage: boolean;
@@ -66,6 +113,18 @@ export interface Plan {
    * keep Plus" and send them to {@link Billing.manage}.
    */
   hasPaymentMethod?: boolean;
+  /** Where the plan in force is paid; null on the default plan. */
+  source?: PlanSource | null;
+  /** Where to manage it - see `billing.store.manage(plan)`; null on the default plan. */
+  manage?: ManageLink | null;
+  /** Other places charging the person too: the website while live; a store while it actually charges. */
+  otherPaying?: PlanSource[];
+  /** The website and a store are both charging - the platform cancels the website one (see `paidTwiceNotice`). */
+  paidTwice?: boolean;
+  /** The banner to show about paying twice, or null. */
+  paidTwiceNotice?: PaidTwiceNotice | null;
+  /** A downgrade made in the store that starts at renewal, or null. */
+  next?: PlanChange | null;
 }
 
 export interface CheckoutOptions {
@@ -99,7 +158,12 @@ export interface ManageOptions {
  * checkout call {@link Billing.refresh} when they come back.
  */
 export class Billing {
-  constructor(private readonly http: Http, private readonly auth: Auth) {}
+  /** The plans in the App's own iOS and Android apps, bought through the App Store and Google Play. */
+  readonly store: StoreBilling;
+
+  constructor(private readonly http: Http, private readonly auth: Auth) {
+    this.store = new StoreBilling(http, auth);
+  }
 
   /** The person's plan, and the App's plans with their prices. `sync` first asks Stripe how things stand. */
   plan(options: { sync?: boolean } = {}): Promise<Plan> {
@@ -140,6 +204,19 @@ export class Billing {
     const plan = await this.plan({ sync: true });
     await this.auth.renew();
     return plan;
+  }
+
+  /**
+   * The banner's one tap when `paidTwiceNotice.resolution` is `failed`: cancel the website subscription
+   * now and refund its unused part. Returns the plan. Refused (`AppError` 502, `PAID_TWICE_UNRESOLVED`)
+   * while Stripe still refuses - the platform keeps trying meanwhile.
+   */
+  async resolvePaidTwice(): Promise<Plan> {
+    try {
+      return await this.http.request<Plan>('POST', this.http.api('/connection/end-users/me/plan/paid-twice/resolve'));
+    } catch (e) {
+      throw billingError(e);
+    }
   }
 
   private async go(url: string) {
