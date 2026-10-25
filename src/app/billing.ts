@@ -2,8 +2,24 @@ import type { Auth } from './auth';
 import type { Http } from './http';
 import { billingError, StoreBilling } from './store';
 
-/** Where the plan in force is paid: the website (the publisher's Stripe), the App Store or Google Play. */
-export type PlanSource = 'web' | 'apple' | 'google';
+/**
+ * Where the plan in force comes from: paid on the website (the publisher's Stripe), the App Store or Google Play - or
+ * `grant`, given by an invite for some months with no payment (`app.invites`).
+ */
+export type PlanSource = 'web' | 'apple' | 'google' | 'grant';
+
+/**
+ * A plan given by an invite, for some months, with no payment. `active`: it is the plan in force now; false while a
+ * paid plan is (paid always wins - the grant keeps its dates underneath, and is back if the paid plan ends first).
+ */
+export interface PlanGrant {
+  planId: string;
+  planName: string | null;
+  startsAt: string;
+  /** When the grant ends and the person is on the App's free plan again, keeping everything. */
+  endsAt: string;
+  active: boolean;
+}
 
 /**
  * Where the person manages the plan in force. `stripe_portal`: {@link Billing.manage}. `apple`: StoreKit's
@@ -80,22 +96,23 @@ export interface Plan {
   name: string | null;
   /** This plan's monthly AI allowance in US dollars; null when there is no limit. */
   monthlyBudgetUsd: number | null;
-  /** Whether it is a paid plan. */
+  /** Whether it is a paid plan. False on a grant from an invite: nobody is paying. */
   paid: boolean;
   /**
    * The subscription's status: `active`, `trialing`, `past_due`, `canceled`... (a store subscription's too:
-   * `grace` while the store retries a payment); null when nothing was bought.
+   * `grace` while the store retries a payment); `grant` on a plan given by an invite; null when nothing was bought.
    */
   status: string | null;
-  /** When a paid plan renews (ISO time) - null when it is cancelling. */
+  /** When a paid plan renews (ISO time) - null when it is cancelling, and on a grant. */
   renewsAt: string | null;
-  /** When a cancelled plan ends, or ended (ISO time). */
+  /** When a cancelled plan ends, or ended (ISO time); on a grant, when the grant ends. */
   endsAt: string | null;
   /** Cancelled in the portal: the plan stays until `endsAt`, then the default plan. */
   cancelAtPeriodEnd: boolean;
   /**
    * Whether {@link Billing.checkout} can be offered: the App takes payments and the person has no paid plan -
-   * false too while an App Store or Google Play subscription is live.
+   * false too while an App Store or Google Play subscription is live. True on a grant: offer "Subscribe" (never
+   * "Switch"); the paid plan takes over from the grant at once, so say so when it is a lower plan than the grant's.
    */
   canUpgrade: boolean;
   /** Whether {@link Billing.manage} can be offered: the person has bought something. */
@@ -125,6 +142,13 @@ export interface Plan {
   paidTwiceNotice?: PaidTwiceNotice | null;
   /** A downgrade made in the store that starts at renewal, or null. */
   next?: PlanChange | null;
+  /**
+   * Whether the plan can be switched on the website now (`/plan/change`): a live website subscription in good
+   * standing. Never on a grant - there is no subscription to switch; offer {@link Billing.checkout} instead.
+   */
+  canChange?: boolean;
+  /** The person's running grant from an invite, also while a paid plan wins (`active: false`); null when none. */
+  grant?: PlanGrant | null;
 }
 
 export interface CheckoutOptions {
