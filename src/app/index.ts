@@ -23,6 +23,11 @@
  *             `requests.inbox`
  *   push      the person's phone, for the App's push notifications: register its token, forget it
  *             on sign-out, and their preferences (which kinds, quiet hours)
+ *   contacts  people of the App who agreed to hear from the person through it - an invite one sends,
+ *             the other accepts
+ *   events    the App's own events ("lesson.cancelled"), now or at a time, about the person or a
+ *             contact - which its automations email or push as the App
+ *   notifications  which of the App's emails the person gets
  *
  * Isolation is the platform's, not the App's: every call carries the person's token, and the person
  * can only ever reach their own install of the App. See https://docs.work.studio.
@@ -34,6 +39,7 @@ import { Chat } from './chat';
 import { type AppConfig, resolve } from './config';
 import { Http } from './http';
 import { Listings } from './listings';
+import { Contacts, Events, Notifications } from './notify';
 import { Push } from './push';
 import { Requests } from './requests';
 import { Account, Content, Data, Files, Images, Projects } from './resources';
@@ -54,6 +60,9 @@ export interface App {
   readonly listings: Listings;
   readonly requests: Requests;
   readonly push: Push;
+  readonly contacts: Contacts;
+  readonly events: Events;
+  readonly notifications: Notifications;
 }
 
 /** Create the client for one App. */
@@ -78,6 +87,9 @@ export function createApp(config: AppConfig): App {
     listings: new Listings(http),
     requests: new Requests(http),
     push,
+    contacts: new Contacts(http),
+    events: new Events(http),
+    notifications: new Notifications(http),
   };
 }
 
@@ -96,6 +108,8 @@ export { AiPaused, AllowanceUsed, AppError, SignInRequired } from './errors';
 export type { AiPausedReason } from './errors';
 export { Listings } from './listings';
 export type { Listing, ListingCard, ListingContact, ListingInput, ListingLocation, ListingNotSearchableReason, NearOptions, NearResult } from './listings';
+export { Contacts, Events, Notifications } from './notify';
+export type { Contact, ContactInvite, EventFieldValue, EventSendOptions, NotificationEvent, NotificationSettings, Scheduled, Sent } from './notify';
 export { Push, routeOf } from './push';
 export type { PushData, PushDevice, PushPlatform, PushPreferences, PushTransport, RegisterOptions } from './push';
 export { Inbox, Requests } from './requests';
