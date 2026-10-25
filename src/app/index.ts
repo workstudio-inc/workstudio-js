@@ -16,6 +16,8 @@
  *             in the App's iOS and Android apps, through the App Store and Google Play
  *   credits   an App with credits: one balance every action draws on (monthly first, then bought ones,
  *             which never expire), "about N" estimates, credit packs and their history
+ *   invites   a single-use link from the publisher that gives a paid plan for some months, no payment:
+ *             what it gives (before sign-in), and using it
  *   ai        whether AI can be used right now - or is paused (their plan's shared pool, or the
  *             App's own budget, is spent) and until when
  *   shares    a frozen copy of something of theirs, opened by link by someone with no account, who
@@ -44,6 +46,7 @@ import { Credits } from './credits';
 import { Chat } from './chat';
 import { type AppConfig, resolve } from './config';
 import { Http } from './http';
+import { Invites } from './invites';
 import { Listings } from './listings';
 import { Contacts, Events, Notifications } from './notify';
 import { Push } from './push';
@@ -64,6 +67,8 @@ export interface App {
   readonly billing: Billing;
   /** The person's credits (an App with credits): balance, "about N", packs and history. */
   readonly credits: Credits;
+  /** Invite links that give a plan for some months: preview, redeem, the token in the address. */
+  readonly invites: Invites;
   readonly ai: Ai;
   readonly shares: Shares;
   readonly listings: Listings;
@@ -93,6 +98,7 @@ export function createApp(config: AppConfig): App {
     images: new Images(http),
     billing: new Billing(http, auth),
     credits: new Credits(http),
+    invites: new Invites(http, auth),
     ai: new Ai(http),
     shares: new Shares(http),
     listings: new Listings(http),
@@ -110,7 +116,9 @@ export type { AiStatus, AiStatusOptions, AiStatusReason } from './ai';
 export { Auth } from './auth';
 export type { CompletedSignIn, SignedIn, SignInMethod, SignInOptions } from './auth';
 export { Billing } from './billing';
-export type { CheckoutOptions, ManageLink, ManageOptions, Money, PaidTwiceNotice, Plan, PlanChange, PlanOption, PlanPrice, PlanSource } from './billing';
+export type { CheckoutLink, CheckoutOptions, ManageLink, ManageOptions, Money, PaidTwiceNotice, Plan, PlanChange, PlanGrant, PlanOption, PlanPrice, PlanSource } from './billing';
+export { Invites } from './invites';
+export type { InvitePreview, InviteRedemption, InviteRefusal } from './invites';
 export { APPLE_SUBSCRIPTIONS_URL, BillingUnavailable, GOOGLE_SUBSCRIPTIONS_URL, manageTarget, StoreBilling, StorePurchaseOtherAccount, TooManyPurchases, TooManyTries } from './store';
 export type { DeletionCheck, ManageTarget, Restored, RestoredPurchase, RestoreResult, StoreCurrent, StoreOffer, StoreOfferOptions, StoreOfferPlan, StorePlatform, StoreProduct, StorePurchase, StoreRestore, StoreSubscriptionSummary, StoreTrial, WebPrice } from './store';
 export { Credits } from './credits';

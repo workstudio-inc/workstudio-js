@@ -557,6 +557,29 @@ const { entries } = await app.credits.history();     // "Bought 450", "Used 37"
   when the person's plan does not sell packs. `account.deletionCheck()` carries `credits.bought`, which
   deleting the account removes.
 
+### Invites
+
+A publisher's invite is a single-use link, `<the App's site>/i/<token>`, that gives one of the App's paid plans
+for some months - no payment, no card. The App's invite page:
+
+```ts
+const token = app.invites.tokenFromUrl();            // this page's address; null when it is not an invite link
+const p = await app.invites.preview(token);          // public, before sign-in: { plan: { name: 'Pro' }, months: 3, status: 'ok', ... }
+// ... the person signs up or signs in ...
+const { grant, plan } = await app.invites.redeem(token);   // then a fresh token: the plan is theirs now
+// plan.source === 'grant', plan.paid === false, plan.endsAt === grant.endsAt
+```
+
+- `preview` needs `appId` in the config; it never says who the invite was for or who used it.
+- Refusals are `AppError` codes: `INVITE_USED`, `INVITE_EXPIRED`, `INVITE_REVOKED`, `INVITE_EMAIL_MISMATCH`
+  (sign in with the address it was sent to), `INVITE_ALREADY_HAD` (one per person per App), `PLAN_NOT_INVITABLE`,
+  `ALREADY_SUBSCRIBED` (they already pay; the invite is not spent), `NO_SUCH_INVITE`, `SLOW_DOWN`.
+- On a grant `billing.plan()` offers Subscribe (`canUpgrade`), never Switch (`canChange` is false), and no free
+  trial. Subscribing to the SAME plan collects the card now and charges at the grant's end
+  (`billing.checkoutLink()` answers `firstChargeAt`; then `plan.grant.keepsAfterGrant` and `plan.next`). A
+  DIFFERENT plan starts at once and ends the grant. When a grant ends with nothing after it, the person is on the
+  free plan again, keeping everything.
+
 ## Build
 
 ```

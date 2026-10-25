@@ -2,8 +2,31 @@ import type { Auth } from './auth';
 import type { Http } from './http';
 import { billingError, StoreBilling } from './store';
 
-/** Where the plan in force is paid: the website (the publisher's Stripe), the App Store or Google Play. */
-export type PlanSource = 'web' | 'apple' | 'google';
+/**
+ * Where the plan in force comes from: paid on the website (the publisher's Stripe), the App Store or Google Play - or
+ * `grant`, given by an invite for some months with no payment (`app.invites`).
+ */
+export type PlanSource = 'web' | 'apple' | 'google' | 'grant';
+
+/**
+ * A plan given by an invite, for some months, with no payment. `active`: it is the plan in force now; false while a
+ * paid plan is (paid always wins - the grant keeps its dates underneath, and is back if the paid plan ends first).
+ */
+export interface PlanGrant {
+  planId: string;
+  planName: string | null;
+  startsAt: string;
+  /** When the grant ends and the person is on the App's free plan again, keeping everything. */
+  endsAt: string;
+  active: boolean;
+  /**
+   * A subscription to the SAME plan is waiting to take over at `endsAt`: the card was collected at Checkout and
+   * nothing is charged until then (the first charge is at `endsAt`; Plan.next then says the plan, `at` = `endsAt`,
+   * `source: 'web'`). The person stays on the plan with no gap. False after it was cancelled in the portal, or
+   * when there is none.
+   */
+  keepsAfterGrant: boolean;
+}
 
 /**
  * Where the person manages the plan in force. `stripe_portal`: {@link Billing.manage}. `apple`: StoreKit's
@@ -40,6 +63,16 @@ export interface PlanChange {
   plan: string;
   name: string | null;
   from: string;
+  /** `plan` again, under the name the App Kit reads. */
+  planId?: string;
+  /** `from` again: when the change takes effect - for a subscription waiting after a grant, the grant's `endsAt`. */
+  at?: string;
+  /** The new plan's interval, when known. */
+  interval?: 'month' | 'year' | null;
+  /** Where it was made: `web`, `apple` or `google`. A same-plan subscription waiting after a grant is `web`. */
+  source?: 'web' | 'apple' | 'google' | null;
+  /** The App can undo it (POST /plan/change/cancel): a website change the platform made. */
+  canUndo?: boolean;
 }
 
 /** One way to pay for a plan: a Stripe price on the App publisher's account. */
@@ -80,22 +113,23 @@ export interface Plan {
   name: string | null;
   /** This plan's monthly AI allowance in US dollars; null when there is no limit. */
   monthlyBudgetUsd: number | null;
-  /** Whether it is a paid plan. */
+  /** Whether it is a paid plan. False on a grant from an invite: nobody is paying. */
   paid: boolean;
   /**
    * The subscription's status: `active`, `trialing`, `past_due`, `canceled`... (a store subscription's too:
-   * `grace` while the store retries a payment); null when nothing was bought.
+   * `grace` while the store retries a payment); `grant` on a plan given by an invite; null when nothing was bought.
    */
   status: string | null;
-  /** When a paid plan renews (ISO time) - null when it is cancelling. */
+  /** When a paid plan renews (ISO time) - null when it is cancelling, and on a grant. */
   renewsAt: string | null;
-  /** When a cancelled plan ends, or ended (ISO time). */
+  /** When a cancelled plan ends, or ended (ISO time); on a grant, when the grant ends. */
   endsAt: string | null;
   /** Cancelled in the portal: the plan stays until `endsAt`, then the default plan. */
   cancelAtPeriodEnd: boolean;
   /**
    * Whether {@link Billing.checkout} can be offered: the App takes payments and the person has no paid plan -
-   * false too while an App Store or Google Play subscription is live.
+   * false too while an App Store or Google Play subscription is live. True on a grant: offer "Subscribe" (never
+   * "Switch"). See {@link Plan.grant} for what subscribing during a grant does.
    */
   canUpgrade: boolean;
   /** Whether {@link Billing.manage} can be offered: the person has bought something. */
@@ -125,6 +159,34 @@ export interface Plan {
   paidTwiceNotice?: PaidTwiceNotice | null;
   /** A downgrade made in the store that starts at renewal, or null. */
   next?: PlanChange | null;
+  /**
+   * Whether the plan can be switched on the website now (`/plan/change`): a live website subscription in good
+   * standing. Never on a grant - there is no subscription to switch; offer {@link Billing.checkout} instead.
+   */
+  canChange?: boolean;
+  /**
+   * The person's running grant from an invite, also while a paid plan wins (`active: false`); null when none.
+   *
+   * While a grant is in force no free trial is offered (`trialAvailable` is false on every plan). Subscribing never
+   * cuts the grant short when it is the SAME plan: Checkout collects the card and the first charge is at the grant's
+   * end (`firstChargeAt` from {@link Billing.checkoutLink}; then `grant.keepsAfterGrant` and `next`). Subscribing to
+   * a DIFFERENT plan (or buying in the App Store or Google Play) starts and charges it at once and ENDS the grant -
+   * say so before Checkout.
+   */
+  grant?: PlanGrant | null;
+}
+
+/** A Checkout page, as {@link Billing.checkoutLink} answers it. */
+export interface CheckoutLink {
+  /** Stripe Checkout's address. */
+  url: string;
+  /** The free trial it starts with, in days; null when none (always null during a grant). */
+  trialDays: number | null;
+  /**
+   * When the first charge is (ISO time) when it is not now: the grant's end, for a subscription to the same plan
+   * as the person's grant (card now, charged then). Null otherwise - charged at once, or after `trialDays`.
+   */
+  firstChargeAt: string | null;
 }
 
 export interface CheckoutOptions {
@@ -176,16 +238,25 @@ export class Billing {
    * person per App, unless `trial: false`.
    */
   async checkout(options: CheckoutOptions): Promise<string> {
+    return (await this.checkoutLink(options)).url;
+  }
+
+  /**
+   * {@link checkout}, answering the whole Checkout link: its `url`, the free trial it starts with (`trialDays`) and
+   * when the first charge is when not now (`firstChargeAt`: the grant's end, for a same-plan subscription during a
+   * grant) - so the App can say "Nothing to pay until Jan 25". Goes there too, unless `open: false`.
+   */
+  async checkoutLink(options: CheckoutOptions): Promise<CheckoutLink> {
     const { open = true, trial, ...rest } = options;
     const body: Record<string, unknown> = { ...rest };
     if (trial !== undefined) body.trial = trial;
-    const { url } = await this.http.request<{ url: string; trialDays?: number | null }>(
+    const answer = await this.http.request<{ url: string; trialDays?: number | null; firstChargeAt?: string | null }>(
       'POST',
       this.http.api('/connection/end-users/me/checkout'),
       body,
     );
-    if (open) await this.go(url);
-    return url;
+    if (open) await this.go(answer.url);
+    return { url: answer.url, trialDays: answer.trialDays ?? null, firstChargeAt: answer.firstChargeAt ?? null };
   }
 
   /** Stripe's customer portal: change the card, see invoices, cancel. Goes there and returns the address. */

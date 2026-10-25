@@ -1,5 +1,6 @@
 // Compile-time only (npm run typecheck; not exported, not bundled): the trial fields are public types.
-import type { CheckoutOptions, Plan, PlanOption } from './billing';
+import type { CheckoutLink, CheckoutOptions, Plan, PlanOption } from './billing';
+import type { InvitePreview, InviteRedemption } from './invites';
 import type { DeletionCheck, ManageTarget, StoreOffer, StorePurchase, StoreRestore } from './store';
 import { manageTarget } from './store';
 
@@ -33,3 +34,26 @@ export const target: ManageTarget | null = manageTarget(storePlan as Plan);
 export const deletion: DeletionCheck = { storeSubscriptions: [], appleSubscription: false, googleSubscription: false };
 // @ts-expect-error - an iOS purchase is its JWS, not a purchase token
 export const wrong: StorePurchase = { platform: 'ios', purchaseToken: 'tok' };
+
+// Invites: a grant is a plan source, with its dates on the plan.
+
+export const grantPlan: Pick<Plan, 'source' | 'status' | 'paid' | 'endsAt' | 'canUpgrade' | 'canChange' | 'grant'> = {
+  source: 'grant', status: 'grant', paid: false, endsAt: '2027-01-25T12:00:00Z', canUpgrade: true, canChange: false,
+  grant: { planId: 'pro', planName: 'Pro', startsAt: '2026-10-25T12:00:00Z', endsAt: '2027-01-25T12:00:00Z', active: true, keepsAfterGrant: false },
+};
+export const preview: InvitePreview = {
+  app: { id: 'c7a7a000-0000-4000-8000-000000000013', name: 'Crava' }, plan: { id: 'pro', name: 'Pro' }, months: 3, status: 'ok',
+  expiresAt: '2026-11-08T12:00:00Z', emailLocked: false,
+};
+export const redeemed: Pick<InviteRedemption, 'grant'> = { grant: grantPlan.grant! };
+// @ts-expect-error - a preview's status is one of five words
+export const badPreview: InvitePreview['status'] = 'valid';
+
+// Subscribing to the same plan during a grant: card now, first charge at the grant's end, the plan carries on.
+export const waiting: Pick<Plan, 'grant' | 'next'> = {
+  grant: { planId: 'pro', planName: 'Pro', startsAt: '2026-10-25T12:00:00Z', endsAt: '2027-01-25T12:00:00Z', active: true, keepsAfterGrant: true },
+  next: { plan: 'pro', planId: 'pro', name: 'Pro', from: '2027-01-25T12:00:00Z', at: '2027-01-25T12:00:00Z', interval: 'month', source: 'web', canUndo: false },
+};
+export const link: CheckoutLink = { url: 'https://checkout.stripe.com/c/pay/cs_1', trialDays: null, firstChargeAt: '2027-01-25T12:00:00Z' };
+// @ts-expect-error - keepsAfterGrant is always said
+export const noKeeps: NonNullable<Plan['grant']> = { planId: 'pro', planName: 'Pro', startsAt: 'x', endsAt: 'y', active: true };
