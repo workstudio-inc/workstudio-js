@@ -185,6 +185,45 @@ export interface OAuthCallbackResult {
   activation?: Activation;
 }
 
+// =============================================================================
+// Regions (a host's own places for widgets; see <svx-region>)
+// =============================================================================
+
+/** One widget that belongs in a region for this customer and context, ready to frame. */
+export interface RegionWidget {
+  widgetId: string;
+  name?: string;
+  description?: string;
+  /** The publisher's layout, e.g. `INLINE` or `SIDEBAR`. */
+  layout?: string;
+  /** The publisher's size, as they wrote it (`"100%"`, `"240px"`); the frame reports its real height. */
+  width?: string;
+  height?: string;
+  order?: number;
+  /**
+   * The URL to frame. It carries a credential minted for this answer, so frame it as given and ask
+   * again rather than storing it.
+   */
+  embedUrl: string;
+  /** The publisher wants this one run as the page opens, to put its count on a launcher. */
+  badgeOnLoad?: boolean;
+}
+
+/** A widget placed in the region that is not shown, and why (e.g. context the host did not send). */
+export interface RegionSkip {
+  widgetId: string;
+  reason: string;
+}
+
+/** What `IntegrationsClient.listRegionWidgets` returns, whichever shape the server answered in. */
+export interface RegionWidgets {
+  widgets: RegionWidget[];
+  /** Empty from a server that predates region contracts. */
+  skipped: RegionSkip[];
+  /** The head version of the region's contract; absent from a server that predates contracts. */
+  contractVersion?: number;
+}
+
 /** A short-lived, single-customer-scoped session token minted from an API key. */
 export interface SessionToken {
   /** The token (prefix `svx_st_`). Give this to the browser embed — never the API key. */

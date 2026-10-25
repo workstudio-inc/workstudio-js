@@ -9,8 +9,20 @@ import type {
   IntegrationDetail,
   OAuthCallbackResult,
   OAuthInitResult,
+  RegionWidgets,
   SessionToken,
 } from './types.js';
+
+// Replaced at build time with the package version (tsup.config.ts); a constant under tooling that
+// does not run the define, e.g. a type check.
+declare const __SDK_VERSION__: string;
+const SDK_VERSION: string = typeof __SDK_VERSION__ !== 'undefined' ? __SDK_VERSION__ : 'dev';
+
+/**
+ * Sent on the region render call. The server answers `{ widgets, skipped, contractVersion }` only to a
+ * caller that says it reads that shape, and the bare array to everyone else.
+ */
+export const REGION_CLIENT = `workstudio-js/${SDK_VERSION}`;
 
 /** Configuration for {@link IntegrationsClient}. */
 export interface IntegrationsClientConfig {
@@ -301,6 +313,46 @@ export class IntegrationsClient {
   }
 
   // ===========================================================================
+  // Regions
+  // ===========================================================================
+
+  /**
+   * The widgets that belong in one of your regions, for a host that frames them itself rather than
+   * using the `<svx-region>` element.
+   *
+   * `context` is what your page knows about what the person is looking at; a field your contract
+   * marks required and you leave out is a 400 naming it. Frame each `widgets[].embedUrl` in order -
+   * the URL carries a credential minted for this answer, so ask again rather than caching it.
+   * `skipped` says why each placed widget is not shown. A session token needs `surface:read`, and
+   * `widget:run` for its frames to run.
+   *
+   * @example
+   * ```ts
+   * const { widgets, skipped } = await client.listRegionWidgets('ticket.sidebar', { ticketId: 'T-42' }, { contractVersion: 3 });
+   * ```
+   *
+   * @param regionKey the region's key in your contract
+   * @param context the page's context values
+   * @param options.contractVersion the contract version your page was built for, recorded in the region's health
+   */
+  async listRegionWidgets(
+    regionKey: string,
+    context: Record<string, unknown>,
+    options?: { contractVersion?: number },
+  ): Promise<RegionWidgets> {
+    const headers: Record<string, string> = { 'X-Region-Client': REGION_CLIENT };
+    if (options?.contractVersion !== undefined) {
+      headers['X-Region-Contract-Version'] = String(options.contractVersion);
+    }
+    const answer = await this.request<unknown>(
+      'POST',
+      `/surfaces/${encodeURIComponent(regionKey)}/widgets`,
+      { body: context ?? {}, headers },
+    );
+    return normaliseRegionWidgets(answer);
+  }
+
+  // ===========================================================================
   // Session tokens (secure browser-embed auth)
   // ===========================================================================
 
@@ -330,12 +382,17 @@ export class IntegrationsClient {
   private async request<T>(
     method: string,
     path: string,
-    opts?: { query?: Record<string, string | undefined>; body?: unknown; scopeKey?: string },
+    opts?: {
+      query?: Record<string, string | undefined>;
+      body?: unknown;
+      scopeKey?: string;
+      headers?: Record<string, string>;
+    },
   ): Promise<T> {
     const url = this.buildUrl(path, opts?.query);
     const res = await this.fetchImpl(url, {
       method,
-      headers: this.headers(opts?.scopeKey),
+      headers: { ...this.headers(opts?.scopeKey), ...opts?.headers },
       body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
 
@@ -391,4 +448,29 @@ export class IntegrationsClient {
       }
     }
   }
+}
+
+/**
+ * Either answer the region render endpoint gives, as one shape. A bare array is a server from before
+ * region contracts; it never reports skips or a version. Rows without a frame URL are dropped.
+ */
+export function normaliseRegionWidgets(body: unknown): RegionWidgets {
+  const isWidget = (w: unknown): w is RegionWidgets['widgets'][number] =>
+    !!w && typeof w === 'object'
+    && typeof (w as { embedUrl?: unknown }).embedUrl === 'string'
+    && (w as { widgetId?: unknown }).widgetId != null;
+  if (Array.isArray(body)) {
+    return { widgets: body.filter(isWidget), skipped: [] };
+  }
+  const obj = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const result: RegionWidgets = {
+    widgets: Array.isArray(obj.widgets) ? obj.widgets.filter(isWidget) : [],
+    skipped: Array.isArray(obj.skipped)
+      ? obj.skipped
+          .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
+          .map((s) => ({ widgetId: String(s.widgetId ?? ''), reason: String(s.reason ?? '') }))
+      : [],
+  };
+  if (typeof obj.contractVersion === 'number') result.contractVersion = obj.contractVersion;
+  return result;
 }

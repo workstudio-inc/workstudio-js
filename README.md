@@ -114,6 +114,10 @@ client.execute(connectorGlobalId, operation, input?): Promise<ExecuteResult>
 client.getMcpAccess(): Promise<McpAccess>
 client.createMcpUrl(): Promise<McpUrl>                      // url is returned once
 client.revokeMcpUrl(): Promise<void>
+
+// Your regions, for a host that frames widgets itself instead of using <svx-region>
+client.listRegionWidgets(regionKey, context, { contractVersion? }): Promise<RegionWidgets>
+//   { widgets: [{ widgetId, name, layout, height, order, embedUrl, ... }], skipped: [{ widgetId, reason }], contractVersion? }
 ```
 
 ### Activation & connector state
