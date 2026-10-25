@@ -21,6 +21,9 @@
  *   listings  the person's public profile of one kind ("shop"), found by others by ZIP code
  *   requests  asking a listing for something, and the thread both ways; the owner's side is
  *             `requests.inbox`
+ *   sharedProjects  a private space with one other person of the App - an owner (a shop) and a
+ *             client - with frozen, priced revisions, messages, change requests and an approval
+ *             record only the two of them can read
  *   push      the person's phone, for the App's push notifications: register its token, forget it
  *             on sign-out, and their preferences (which kinds, quiet hours)
  *
@@ -38,6 +41,7 @@ import { Push } from './push';
 import { Requests } from './requests';
 import { Account, Content, Data, Files, Images, Projects } from './resources';
 import { Shares } from './shares';
+import { SharedProjects } from './sharedProjects';
 
 export interface App {
   readonly auth: Auth;
@@ -53,6 +57,7 @@ export interface App {
   readonly shares: Shares;
   readonly listings: Listings;
   readonly requests: Requests;
+  readonly sharedProjects: SharedProjects;
   readonly push: Push;
 }
 
@@ -77,6 +82,7 @@ export function createApp(config: AppConfig): App {
     shares: new Shares(http),
     listings: new Listings(http),
     requests: new Requests(http),
+    sharedProjects: new SharedProjects(http),
     push,
   };
 }
@@ -102,5 +108,7 @@ export { Inbox, Requests } from './requests';
 export type { ListingRequest, NewRequest, RequestListing, RequestListOptions, RequestMessage, RequestParty, RequestRequester, RequestShare, RequestStatus } from './requests';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Images, Projects } from './resources';
 export { Shares } from './shares';
+export { SharedProjects } from './sharedProjects';
+export type { NewProjectRevision, ProjectApproval, ProjectChangeRequest, ProjectChannel, ProjectContact, ProjectEntriesOptions, ProjectEntry, ProjectEntryType, ProjectParticipant, ProjectPrice, ProjectRevision, ProjectRevisionMeta, ProjectSide, ProjectStatus, SharedProject, SharedProjectListOptions, SharedProjectSummary } from './sharedProjects';
 export type { GuestShare, NewShare, Share, ShareComment, ShareDecision } from './shares';
 export type { Allowance, ContentFacet, ContentItem, ContentPack, ContentPage, ContentPageOptions, DataRecord, FindOptions, Me, Picture, PictureOptions, Project, ProjectInput, PublishedContentItem, StoredFile } from './resources';
