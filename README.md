@@ -574,8 +574,11 @@ const { grant, plan } = await app.invites.redeem(token);   // then a fresh token
 - Refusals are `AppError` codes: `INVITE_USED`, `INVITE_EXPIRED`, `INVITE_REVOKED`, `INVITE_EMAIL_MISMATCH`
   (sign in with the address it was sent to), `INVITE_ALREADY_HAD` (one per person per App), `PLAN_NOT_INVITABLE`,
   `NO_SUCH_INVITE`, `SLOW_DOWN`.
-- On a grant `billing.plan()` offers Subscribe (`canUpgrade`), never Switch (`canChange` is false). A paid plan
-  takes over at once; when the grant ends the person is on the free plan again, keeping everything.
+- On a grant `billing.plan()` offers Subscribe (`canUpgrade`), never Switch (`canChange` is false), and no free
+  trial. Subscribing to the SAME plan collects the card now and charges at the grant's end
+  (`billing.checkoutLink()` answers `firstChargeAt`; then `plan.grant.keepsAfterGrant` and `plan.next`). A
+  DIFFERENT plan starts at once and ends the grant. When a grant ends with nothing after it, the person is on the
+  free plan again, keeping everything.
 
 ## Build
 

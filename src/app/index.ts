@@ -116,7 +116,7 @@ export type { AiStatus, AiStatusOptions, AiStatusReason } from './ai';
 export { Auth } from './auth';
 export type { CompletedSignIn, SignedIn, SignInMethod, SignInOptions } from './auth';
 export { Billing } from './billing';
-export type { CheckoutOptions, ManageLink, ManageOptions, Money, PaidTwiceNotice, Plan, PlanChange, PlanGrant, PlanOption, PlanPrice, PlanSource } from './billing';
+export type { CheckoutLink, CheckoutOptions, ManageLink, ManageOptions, Money, PaidTwiceNotice, Plan, PlanChange, PlanGrant, PlanOption, PlanPrice, PlanSource } from './billing';
 export { Invites } from './invites';
 export type { InvitePreview, InviteRedemption, InviteRefusal } from './invites';
 export { APPLE_SUBSCRIPTIONS_URL, BillingUnavailable, GOOGLE_SUBSCRIPTIONS_URL, manageTarget, StoreBilling, StorePurchaseOtherAccount, TooManyPurchases, TooManyTries } from './store';

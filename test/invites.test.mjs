@@ -20,7 +20,7 @@ function client(replies = [], config = {}) {
 }
 
 const PREVIEW = { app: { id: APP, name: 'Crava' }, plan: { id: 'pro', name: 'Pro' }, months: 3, status: 'ok', expiresAt: '2026-11-08T12:00:00Z', emailLocked: false };
-const GRANT = { planId: 'pro', planName: 'Pro', startsAt: '2026-10-25T12:00:00Z', endsAt: '2027-01-25T12:00:00Z', active: true };
+const GRANT = { planId: 'pro', planName: 'Pro', startsAt: '2026-10-25T12:00:00Z', endsAt: '2027-01-25T12:00:00Z', active: true, keepsAfterGrant: false };
 const PLAN = {
   enabled: true, plan: 'pro', name: 'Pro', monthlyBudgetUsd: 15, paid: false, status: 'grant', renewsAt: null, endsAt: GRANT.endsAt,
   cancelAtPeriodEnd: false, canUpgrade: true, canChange: false, canManage: false, defaultPlan: 'free', plans: [], features: ['full_plans'],
@@ -125,5 +125,38 @@ describe('the plan on a grant', () => {
     assert.equal(plan.canUpgrade, true);
     assert.equal(plan.canChange, false);
     assert.deepEqual(plan.grant, GRANT);
+  });
+});
+
+describe('subscribing during a grant', () => {
+  it('checkoutLink answers the url, trialDays and firstChargeAt (the grant end for the same plan); checkout still answers the url', async () => {
+    const answer = { url: 'https://checkout.stripe.com/c/pay/cs_g', trialDays: null, firstChargeAt: GRANT.endsAt };
+    const { app, calls } = client([{ body: answer }, { body: answer }]);
+    const link = await app.billing.checkoutLink({ priceId: 'price_pro', open: false });
+    assert.deepEqual(link, answer);
+    assert.equal(calls[0].url, `${API}/api/v1/workflow/connection/end-users/me/checkout`);
+    assert.deepEqual(calls[0].body, { priceId: 'price_pro' });
+    assert.equal(await app.billing.checkout({ priceId: 'price_pro', open: false }), answer.url);
+  });
+
+  it('a platform that does not say firstChargeAt or trialDays reads as null', async () => {
+    const { app } = client([{ body: { url: 'https://checkout.stripe.com/c/pay/cs_x' } }]);
+    assert.deepEqual(await app.billing.checkoutLink({ priceId: 'price_plus', open: false }),
+      { url: 'https://checkout.stripe.com/c/pay/cs_x', trialDays: null, firstChargeAt: null });
+  });
+
+  it('the plan says the same-plan subscription waits for the grant end: keepsAfterGrant and next', async () => {
+    const waiting = {
+      ...PLAN, canUpgrade: false, canManage: true,
+      grant: { ...GRANT, keepsAfterGrant: true },
+      next: { plan: 'pro', planId: 'pro', name: 'Pro', from: GRANT.endsAt, at: GRANT.endsAt, interval: 'month', source: 'web', canUndo: false },
+    };
+    const { app } = client([{ body: waiting }]);
+    const plan = await app.billing.plan();
+    assert.equal(plan.source, 'grant');
+    assert.equal(plan.grant.keepsAfterGrant, true);
+    assert.equal(plan.next.at, plan.grant.endsAt);
+    assert.equal(plan.next.source, 'web');
+    assert.equal(plan.next.planId, 'pro');
   });
 });
