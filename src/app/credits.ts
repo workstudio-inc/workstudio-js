@@ -101,6 +101,18 @@ export interface CreditHistoryEntry {
   /** Words to show: "Bought 450", "Used 37". */
   label: string;
   packId?: string;
+  /** PURCHASE bought on the website only: what was paid, in the currency's minor unit (999 = $9.99). */
+  paid?: CreditMoney;
+  /** PURCHASE bought on the website only: how much of it has been refunded so far (0 when none). */
+  refunded?: CreditMoney;
+  /** REFUND only: the `id` of the PURCHASE entry it refunded. */
+  purchaseId?: string;
+}
+
+/** An amount in the currency's minor unit (999 = $9.99) and its ISO currency, lower case. */
+export interface CreditMoney {
+  amount: number;
+  currency: string;
 }
 
 export interface CreditHistory {

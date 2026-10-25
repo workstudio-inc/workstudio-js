@@ -96,7 +96,7 @@ export type { CheckoutOptions, ManageLink, ManageOptions, Money, PaidTwiceNotice
 export { APPLE_SUBSCRIPTIONS_URL, BillingUnavailable, GOOGLE_SUBSCRIPTIONS_URL, manageTarget, StoreBilling, StorePurchaseOtherAccount, TooManyPurchases, TooManyTries } from './store';
 export type { DeletionCheck, ManageTarget, Restored, RestoredPurchase, RestoreResult, StoreCurrent, StoreOffer, StoreOfferOptions, StoreOfferPlan, StorePlatform, StoreProduct, StorePurchase, StoreRestore, StoreSubscriptionSummary, StoreTrial, WebPrice } from './store';
 export { Credits } from './credits';
-export type { BuyOptions, CreditBalance, CreditEstimate, CreditEstimateOptions, CreditHistory, CreditHistoryEntry, CreditPack, CreditPacks, CreditPacksOptions, CreditPacksWhy, CreditsOptions, CreditUnit } from './credits';
+export type { BuyOptions, CreditBalance, CreditEstimate, CreditEstimateOptions, CreditHistory, CreditHistoryEntry, CreditMoney, CreditPack, CreditPacks, CreditPacksOptions, CreditPacksWhy, CreditsOptions, CreditUnit } from './credits';
 export { Chat, Conversation, TurnFailed } from './chat';
 export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn, Waived } from './chat';
 export type { AppConfig, KeyValueStore } from './config';
