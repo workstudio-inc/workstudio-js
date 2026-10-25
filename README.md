@@ -430,6 +430,38 @@ else if (where?.kind === 'stripe_portal') await app.billing.manage();
   `billing.store.manage(sub.manage)`, then delete if they confirm (Apple guideline 5.1.1(v)). The
   platform cancels Google Play subscriptions on deletion.
 
+### Shared projects: an owner and a client on one piece of work
+
+`app.sharedProjects` is a private space between two of the App's people: the **owner** side (a shop,
+whose plan has the App's project feature) and the **client** side. Only the two of them can read it - the
+platform enforces that in its database; the App's publisher sees counts only. (`app.projects` is still
+the person's own projects.)
+
+```ts
+// The owner starts one from a request sent to their listing, optionally with revision 1
+const job = await app.sharedProjects.startFromRequest(request.id, { kind: 'job' });
+// ...or the client continues from the owner's proposal link
+const same = await app.sharedProjects.continueFromShare(shareToken);
+
+// The owner posts numbered, frozen revisions: the App's JSON, a price and a lead time
+const r = await app.sharedProjects.postRevision(job.id, {
+  payload: design, price: { amount: '1240.00', currency: 'USD' }, leadTime: '3-4 weeks',
+  summary: 'wider, adjustable shelves, +$80', changes: whatChanged, answers: [changeRequestId],
+});
+// Either side talks and asks for changes; the owner declines one with a reason or answers it with a revision
+await app.sharedProjects.message(job.id, 'Could it be 10 cm wider?');
+await app.sharedProjects.requestChange(job.id, { body: '10 cm wider', revision: r.number });
+// The client approves the latest revision at its price: the project is `agreed`; a later revision needs approving again
+await app.sharedProjects.approve(job.id, { revision: r.number, hash: r.hash });
+// Read state is per person, the same on every device
+await app.sharedProjects.markRead(job.id);
+const badge = await app.sharedProjects.unread();   // { projects, entries }
+```
+
+When the owner side's plan loses the feature, messages go on but new revisions and approvals are paused
+(`paused: true`; 403 `FEATURE_PAUSED`). When one side deletes their account the other keeps a read-only
+record with that person's messages and contact removed.
+
 ### Push notifications to the person's phone
 
 A phone build can have the App's automations push to the person ("New quote request") - sent with the
