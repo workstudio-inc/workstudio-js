@@ -1,4 +1,4 @@
-import { AiPaused, AllowanceUsed, AppError } from './errors';
+import { AiPaused, AllowanceUsed, AppError, CreditsUsedUp } from './errors';
 import type { Http } from './http';
 import type { DeletionCheck } from './store';
 
@@ -498,8 +498,12 @@ export interface Picture {
   image: string;
   model: string;
   size: string;
-  /** What it cost, charged to the person's monthly AI allowance in the App. */
+  /** What it cost, charged to the person's monthly AI allowance in the App. For the App's own server: never show it. */
   costUsd: number;
+  /** An App with credits: the balance after this picture (also handed to `credits.onChange`). */
+  credits?: Record<string, unknown>;
+  /** Whole credits this picture used. */
+  creditsUsed?: number;
 }
 
 /**
@@ -514,14 +518,18 @@ export class Images {
   async make(options: PictureOptions): Promise<Picture> {
     const images = await Promise.all(options.images.map(i => (typeof i === 'string' ? i : dataUrl(i))));
     try {
-      return await this.http.request<Picture>('POST', `${this.http.config.aiRuntimeUrl}/api/v1/workflow/ai-runtime/sessions/mine/images`, {
+      const picture = await this.http.request<Picture>('POST', `${this.http.config.aiRuntimeUrl}/api/v1/workflow/ai-runtime/sessions/mine/images`, {
         images,
         prompt: options.prompt,
         ...(options.size ? { size: options.size } : {}),
         ...(options.quality ? { quality: options.quality } : {}),
         ...(options.model ? { model: options.model } : {}),
       });
+      if (picture?.credits) this.http.creditsSeen({ ...picture.credits, used: picture.creditsUsed });
+      return picture;
     } catch (e) {
+      const outOfCredits = e instanceof AppError ? CreditsUsedUp.from(e.details ?? { code: e.code }, e.message) : null;
+      if (outOfCredits) throw this.http.paused(outOfCredits);
       const paused = e instanceof AppError ? AiPaused.from(e.details ?? { code: e.code }, e.message) : null;
       if (paused) throw this.http.paused(paused);
       if (e instanceof AppError && (e.status === 402 || e.code === 'ALLOWANCE_USED')) throw new AllowanceUsed(e.message);

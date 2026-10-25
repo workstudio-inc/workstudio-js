@@ -95,3 +95,51 @@ export function nextReset(scope: 'day' | 'month', now = new Date()): string {
     : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   return d.toISOString().replace('.000Z', 'Z');
 }
+
+/**
+ * The person's credits cannot start this right now (code `CREDITS_USED_UP`): a chat turn, a picture, or
+ * `ai.status()` with `reason: 'credits'`. Their monthly credits come back on `resetAt` (ISO, UTC); `scope: 'once'`
+ * means starter credits that do not come back. Show it as "out of credits" - never as an error - with "Get more
+ * credits" ({@link Credits.packs}) or "Choose Plus". `credits` is the balance when the refusal carried it.
+ */
+export class CreditsUsedUp extends AppError {
+  readonly reason = 'credits' as const;
+  readonly scope?: 'month' | 'once';
+  readonly resetAt?: string;
+  readonly plan?: string;
+  readonly credits?: Record<string, unknown>;
+
+  constructor(init: { scope?: 'month' | 'once'; resetAt?: string; plan?: string; message?: string; credits?: Record<string, unknown> } = {}) {
+    super(402, init.message || 'You’ve used your credits for now.', 'CREDITS_USED_UP');
+    this.name = 'CreditsUsedUp';
+    this.scope = init.scope;
+    this.resetAt = init.resetAt;
+    this.plan = init.plan;
+    this.credits = init.credits;
+    Object.setPrototypeOf(this, CreditsUsedUp.prototype);
+  }
+
+  /** The refusal a stream error event or an HTTP answer carries, or null when it is not one. */
+  static from(fields: Record<string, unknown> | undefined | null, message?: string): CreditsUsedUp | null {
+    if (!fields) return null;
+    const code = String(fields.errorCode ?? fields.code ?? '');
+    if (code !== 'CREDITS_USED_UP') return null;
+    const text = typeof fields.message === 'string' ? fields.message : typeof fields.error === 'string' ? fields.error : message;
+    return new CreditsUsedUp({
+      scope: fields.scope === 'month' || fields.scope === 'once' ? fields.scope : undefined,
+      resetAt: typeof fields.resetAt === 'string' ? fields.resetAt : undefined,
+      plan: typeof fields.plan === 'string' ? fields.plan : undefined,
+      message: text,
+      credits: fields.credits && typeof fields.credits === 'object' ? (fields.credits as Record<string, unknown>) : undefined,
+    });
+  }
+}
+
+/** Credit packs come with some plans only (`NOT_FOR_YOUR_PLAN`): show `message`, and the plans that have them. */
+export class NotForYourPlan extends AppError {
+  constructor(message = 'Credit packs come with a paid plan.', details?: Record<string, unknown>) {
+    super(403, message, 'NOT_FOR_YOUR_PLAN', details);
+    this.name = 'NotForYourPlan';
+    Object.setPrototypeOf(this, NotForYourPlan.prototype);
+  }
+}

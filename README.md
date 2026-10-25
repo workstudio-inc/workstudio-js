@@ -502,6 +502,29 @@ if (ai.paused && ai.reason !== 'allowance') showPaused(new Date(ai.resetAt!));  
 - A turn already running when the pool runs out is let finish, and so are up to two follow-up turns of
   the same conversation within 15 minutes, so a multi-round request is not cut off half done.
 
+### Credits
+
+An App with `plans.credits` shows one balance instead of dollars: the plan's monthly credits are spent
+first, then credits the person bought, which never expire.
+
+```ts
+const c = await app.credits.balance();     // cached 30 s
+// { available: 420, monthly: { left: 320, total: 500, period: 'month', resetsOn: '2026-11-01' },
+//   bought: { left: 100 }, state: 'ok', hints: { design: 25, picture: 3 }, unit: { name: 'credits', one: 'credit' } }
+app.credits.onChange(c => pill.set(c.available));   // after every chat turn and picture too
+const { credits } = await app.credits.estimate('picture');   // "Uses about 3 credits"
+const packs = await app.credits.packs();   // canBuy false with why: NOT_FOR_YOUR_PLAN on Free
+await app.credits.buy('small', { successUrl: location.href });   // Stripe Checkout on the publisher's account
+const { entries } = await app.credits.history();     // "Bought 450", "Used 37"
+```
+
+- An action starts only when enough credits are left, then runs to its end. Refused, it throws
+  `CreditsUsedUp` (code `CREDITS_USED_UP`, `scope` `month` or `once`, `resetAt`); `ai.status()` answers
+  `reason: 'credits'`. Show it as "out of credits", never as an error.
+- Buying is web-only for now (`buy(..., { platform: 'ios' })` throws `IN_APP_NOT_YET`); `NotForYourPlan`
+  when the person's plan does not sell packs. `account.deletionCheck()` carries `credits.bought`, which
+  deleting the account removes.
+
 ## Build
 
 ```

@@ -1,6 +1,6 @@
 import type { Auth } from './auth';
 import type { ResolvedConfig } from './config';
-import { AiPaused, AppError, SignInRequired } from './errors';
+import { AiPaused, AppError, CreditsUsedUp, SignInRequired } from './errors';
 
 /** Calls the platform as the signed-in person. */
 export class Http {
@@ -10,12 +10,33 @@ export class Http {
    * The last pause a request ran into, so `ai.status()` says paused straight away rather than after
    * its cache runs out. Disregarded once its `resetAt` has passed.
    */
-  lastPause: AiPaused | null = null;
+  lastPause: AiPaused | CreditsUsedUp | null = null;
 
   /** Remember a pause a request ran into, and hand it back to throw. */
-  paused(error: AiPaused): AiPaused {
+  paused<E extends AiPaused | CreditsUsedUp>(error: E): E {
     this.lastPause = error;
+    if (error instanceof CreditsUsedUp && error.credits) this.creditsSeen(error.credits);
     return error;
+  }
+
+  private readonly creditListeners = new Set<(raw: Record<string, unknown>) => void>();
+
+  /** Hear every credits balance the platform says - a chat turn's `credits` event, a picture's answer, a refusal. */
+  onCredits(listener: (raw: Record<string, unknown>) => void): () => void {
+    this.creditListeners.add(listener);
+    return () => this.creditListeners.delete(listener);
+  }
+
+  /** A credits balance the platform said, as it said it. */
+  creditsSeen(raw: unknown): void {
+    if (!raw || typeof raw !== 'object') return;
+    for (const l of this.creditListeners) {
+      try {
+        l(raw as Record<string, unknown>);
+      } catch {
+        // A listener's own failure is its own.
+      }
+    }
   }
 
   /** Whether calls go as someone: a person signed in here, or a token the App brings. */
