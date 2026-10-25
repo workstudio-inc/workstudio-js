@@ -32,11 +32,12 @@ export interface InviteRedemption {
  * Why a redeem was refused - each an {@link AppError} with this `code` and a `message` fit to show the person:
  * `NO_SUCH_INVITE` (404), `INVITE_USED` (409), `INVITE_EXPIRED` (410), `INVITE_REVOKED` (410),
  * `INVITE_EMAIL_MISMATCH` (403: sign in with the address it was sent to), `INVITE_ALREADY_HAD` (409: one per person
- * per App), `PLAN_NOT_INVITABLE` (409), `SLOW_DOWN` (429), `UNAVAILABLE` (503), `NOT_AN_END_USER` (403).
+ * per App), `PLAN_NOT_INVITABLE` (409), `ALREADY_SUBSCRIBED` (409: the person already pays - a paid plan wins over a grant,
+ * so the invite is not spent), `SLOW_DOWN` (429), `UNAVAILABLE` (503), `NOT_AN_END_USER` (403).
  */
 export type InviteRefusal =
   | 'NO_SUCH_INVITE' | 'INVITE_USED' | 'INVITE_EXPIRED' | 'INVITE_REVOKED' | 'INVITE_EMAIL_MISMATCH' | 'INVITE_ALREADY_HAD'
-  | 'PLAN_NOT_INVITABLE' | 'SLOW_DOWN' | 'UNAVAILABLE' | 'NOT_AN_END_USER';
+  | 'PLAN_NOT_INVITABLE' | 'ALREADY_SUBSCRIBED' | 'SLOW_DOWN' | 'UNAVAILABLE' | 'NOT_AN_END_USER';
 
 /** The shape of a token: what the platform makes (base64url, 24 characters). Anything else is not one. */
 const TOKEN = /^[A-Za-z0-9_-]{16,64}$/;

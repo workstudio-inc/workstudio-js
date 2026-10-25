@@ -573,7 +573,7 @@ const { grant, plan } = await app.invites.redeem(token);   // then a fresh token
 - `preview` needs `appId` in the config; it never says who the invite was for or who used it.
 - Refusals are `AppError` codes: `INVITE_USED`, `INVITE_EXPIRED`, `INVITE_REVOKED`, `INVITE_EMAIL_MISMATCH`
   (sign in with the address it was sent to), `INVITE_ALREADY_HAD` (one per person per App), `PLAN_NOT_INVITABLE`,
-  `NO_SUCH_INVITE`, `SLOW_DOWN`.
+  `ALREADY_SUBSCRIBED` (they already pay; the invite is not spent), `NO_SUCH_INVITE`, `SLOW_DOWN`.
 - On a grant `billing.plan()` offers Subscribe (`canUpgrade`), never Switch (`canChange` is false), and no free
   trial. Subscribing to the SAME plan collects the card now and charges at the grant's end
   (`billing.checkoutLink()` answers `firstChargeAt`; then `plan.grant.keepsAfterGrant` and `plan.next`). A
