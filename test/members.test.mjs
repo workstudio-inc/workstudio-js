@@ -75,3 +75,89 @@ describe('internal Apps: NOT_A_MEMBER', () => {
     await assert.rejects(app.auth.completeSignIn(back), e => e instanceof AppError && !(e instanceof NotAMember) && e.code === 'invalid_target');
   });
 });
+
+// Someone already signed in whose platform token is due: the refresh swaps again and meets the answer `swap`.
+function signedIn(swap) {
+  const calls = [];
+  const fetch = async (url, init = {}) => {
+    calls.push({ url, body: init.body ? String(init.body) : undefined });
+    if (url.endsWith('/protocol/openid-connect/token')) {
+      return new Response(JSON.stringify({ access_token: 'realm.access.token', refresh_token: 'realm-refresh-2' }), { status: 200 });
+    }
+    if (url.endsWith('/protocol/openid-connect/logout')) return new Response('', { status: 204 });
+    return new Response(JSON.stringify(swap.body), { status: swap.status, headers: { 'Content-Type': 'application/json' } });
+  };
+  const storage = memory();
+  storage.setItem(`workstudio.app.${CLIENT}`, JSON.stringify({
+    email: 'pat@acme.test', platformToken: 'old-platform-token', platformTokenExpiresAt: Date.now() + 1000, refreshToken: 'realm-refresh',
+  }));
+  const app = createApp({ apiUrl: API, signInIssuer: ISSUER, clientId: CLIENT, redirectUri: 'https://tools.example.test/', storage, fetch });
+  return { app, calls, storage };
+}
+
+const REFUSED = {
+  status: 403,
+  body: { error: 'invalid_target', error_description: 'This app is only for Acme members.', code: 'NOT_A_MEMBER', organization: 'Acme' },
+};
+
+describe('internal Apps: NOT_A_MEMBER on a refresh', () => {
+  it('token() throws NotAMember - not a bare SignInRequired - and the person is signed out here and on the hosted page', async () => {
+    const { app, calls, storage } = signedIn(REFUSED);
+    const heard = [];
+    const changes = [];
+    app.auth.onNotAMember(e => heard.push(e));
+    app.auth.onChange(who => changes.push(who));
+
+    await assert.rejects(app.auth.token(), e => {
+      assert.ok(e instanceof NotAMember);
+      assert.equal(e.organization, 'Acme');
+      assert.equal(e.message, 'This app is only for Acme members.');
+      return true;
+    });
+    assert.equal(heard.length, 1);
+    assert.ok(heard[0] instanceof NotAMember);
+    assert.deepEqual(changes, [null]);
+    assert.equal(storage.getItem(`workstudio.app.${CLIENT}`), null);
+    assert.equal(await app.auth.signedIn(), null);
+    const logout = calls.find(c => c.url.endsWith('/protocol/openid-connect/logout'));
+    assert.ok(logout && logout.body.includes('refresh_token=realm-refresh'));
+    // Afterwards: nobody signed in, as usual.
+    await assert.rejects(app.auth.token(), e => e.code === 'SIGN_IN_REQUIRED');
+  });
+
+  it('renew() says it the same way', async () => {
+    const { app } = signedIn(REFUSED);
+    await assert.rejects(app.auth.renew(), e => e instanceof NotAMember && e.code === 'NOT_A_MEMBER');
+  });
+
+  it('the event fires at sign-in too, so one handler covers both', async () => {
+    const { app, back } = returning(REFUSED);
+    const heard = [];
+    app.auth.onNotAMember(e => heard.push(e.organization));
+    await assert.rejects(app.auth.completeSignIn(back), e => e instanceof NotAMember);
+    assert.deepEqual(heard, ['Acme']);
+  });
+
+  it('a listener that throws changes nothing for the caller', async () => {
+    const { app } = signedIn(REFUSED);
+    app.auth.onNotAMember(() => { throw new Error('app bug'); });
+    await assert.rejects(app.auth.token(), e => e instanceof NotAMember);
+  });
+
+  it('MEMBERSHIP_UNAVAILABLE on a refresh keeps the person signed in: token() throws it to retry, renew() is false', async () => {
+    const unavailable = { status: 503, body: { error: 'temporarily_unavailable', error_description: 'Try again in a minute.', code: 'MEMBERSHIP_UNAVAILABLE' } };
+    const { app, storage } = signedIn(unavailable);
+    await assert.rejects(app.auth.token(), e => e instanceof AppError && e.code === 'MEMBERSHIP_UNAVAILABLE');
+    assert.notEqual(storage.getItem(`workstudio.app.${CLIENT}`), null);
+    assert.equal(await app.auth.renew(), false);
+    assert.ok(await app.auth.signedIn());
+  });
+
+  it('any other refusal on a refresh is the silent sign-out it was', async () => {
+    const { app } = signedIn({ status: 403, body: { error: 'invalid_target', error_description: 'This account is suspended.' } });
+    const heard = [];
+    app.auth.onNotAMember(e => heard.push(e));
+    await assert.rejects(app.auth.token(), e => e.code === 'SIGN_IN_REQUIRED');
+    assert.equal(heard.length, 0);
+  });
+});

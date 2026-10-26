@@ -311,8 +311,10 @@ await app.account.delete();
   allowance), and `AppError` with `status` and a `message` fit to show.
 - **Internal Apps** (sign-in for members of your organization only): `completeSignIn()` throws `NotAMember`
   (`code: 'NOT_A_MEMBER'`, `organization`) for anyone whose verified email is not a member's - show its
-  `message` ("This app is only for Acme members.") and offer another account. `MEMBERSHIP_UNAVAILABLE` (503) means
-  membership could not be checked just now: try again.
+  `message` ("This app is only for Acme members.") and offer another account. The same `NotAMember` comes from
+  `auth.token()` / `renew()` (and any call needing a token) when a refresh finds the person has left the
+  organization - they are signed out by then - and `auth.onNotAMember(e => ...)` hears both. `MEMBERSHIP_UNAVAILABLE`
+  (503) means membership could not be checked just now: the person stays signed in; try again.
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
   an App version is approved), the monthly AI allowance per person, sign-in methods and branding.

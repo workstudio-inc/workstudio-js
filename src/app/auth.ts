@@ -108,6 +108,7 @@ export class Auth {
   private loaded: Promise<void> | null = null;
   private refreshing: Promise<string | null> | null = null;
   private readonly listeners = new Set<(who: SignedIn | null) => void>();
+  private readonly notMemberListeners = new Set<(refusal: NotAMember) => void>();
   private readonly signingOut = new Set<() => Promise<void>>();
 
   constructor(private readonly config: ResolvedConfig) {
@@ -167,6 +168,26 @@ export class Auth {
   onChange(listener: (who: SignedIn | null) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Called when an internal App turns the person away (`NOT_A_MEMBER`): at sign-in, or later when their sign-in is
+   * renewed - say they left the organization. Show `refusal.message` ("This app is only for Acme members.") and offer
+   * another account; by then they are signed out here and on the hosted page. Returns an unsubscribe.
+   */
+  onNotAMember(listener: (refusal: NotAMember) => void): () => void {
+    this.notMemberListeners.add(listener);
+    return () => this.notMemberListeners.delete(listener);
+  }
+
+  private notAMember(refusal: NotAMember): void {
+    this.notMemberListeners.forEach(l => {
+      try {
+        l(refusal);
+      } catch {
+        /* a listener never changes what the caller gets */
+      }
+    });
   }
 
   private redirectUri(): string {
@@ -246,6 +267,7 @@ export class Auth {
       // sign-in there too: left open, the next sign-in - with another account - meets it and fails with
       // "already authenticated as a different user".
       this.endHostedSession(tokens.refresh_token);
+      if (e instanceof NotAMember) this.notAMember(e);
       throw e;
     }
     await this.save(who);
@@ -286,6 +308,8 @@ export class Auth {
   /**
    * A platform token good for at least another minute, refreshed when needed.
    * @throws SignInRequired when nobody is signed in or the sign-in has lapsed
+   * @throws NotAMember when an internal App no longer lets the person in (they are signed out)
+   * @throws AppError `MEMBERSHIP_UNAVAILABLE` when an internal App could not check membership just now (still signed in)
    */
   async token(): Promise<string> {
     if (this.config.platformToken) {
@@ -308,6 +332,7 @@ export class Auth {
    * A fresh platform token now, whatever the current one's expiry - when something it carries has
    * changed, such as the person's plan and allowance after a checkout. False when nobody is signed in,
    * the App brings its own token, or the sign-in has lapsed (then the person must sign in again).
+   * @throws NotAMember when an internal App no longer lets the person in (they are signed out)
    */
   async renew(): Promise<boolean> {
     if (this.config.platformToken) return false;
@@ -315,7 +340,13 @@ export class Auth {
     const who = this.current;
     if (!who) return false;
     this.refreshing ??= this.refresh(who).finally(() => (this.refreshing = null));
-    return (await this.refreshing) !== null;
+    try {
+      return (await this.refreshing) !== null;
+    } catch (e) {
+      if (e instanceof NotAMember) throw e;
+      // Membership could not be checked just now: still signed in, on the token they had.
+      return false;
+    }
   }
 
   /** Forget the sign-in after the platform refused it, so the App asks the person again. */
@@ -333,8 +364,18 @@ export class Auth {
       const fresh = await this.swap(tokens);
       await this.save(fresh);
       return fresh.platformToken;
-    } catch {
+    } catch (e) {
+      // An internal App could not check membership just now: nothing is known against the person, so they stay
+      // signed in and the next call tries again.
+      if (e instanceof AppError && e.code === 'MEMBERSHIP_UNAVAILABLE') throw e;
       await this.save(null);
+      // An internal App turned them away - they left the organization, say. Said, not a silent sign-out, so the
+      // App can tell them why; the hosted sign-in is ended too, so another account can be tried.
+      if (e instanceof NotAMember) {
+        this.endHostedSession(who.refreshToken);
+        this.notAMember(e);
+        throw e;
+      }
       return null;
     }
   }
