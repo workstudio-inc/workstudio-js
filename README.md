@@ -279,6 +279,12 @@ const designs = app.data.collection<{ title: string; status: string }>('crava_de
 const saved = await designs.create({ title: 'Side table', status: 'draft' });
 await designs.update(saved.id, { status: 'checked' });     // merges; replace() replaces
 
+// An internal App (signIn.audience: members) may share a collection with its members (shared: members in the
+// manifest): the same calls, but every signed-in member reads and changes the same records, and each says who
+// created and last changed it - set by the platform, never by the App.
+const tasks = await app.data.collection<{ title: string }>('records').find();
+tasks[0].createdByName;   // 'alice@example.com'; also createdBy, updatedBy (end-user ids), updatedByName
+
 // What the App ships - templates, featured designs - at the version their install runs. Read-only.
 // Before anyone signs in, a pack the App lists in its publicContent, at its latest approved release
 // (needs appId).
