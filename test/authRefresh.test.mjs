@@ -330,17 +330,50 @@ describe('auth refresh: failures', () => {
     assert.equal(held(store).refreshToken, 'rt-1');
   });
 
-  it('other refusals (400 invalid_client from the realm, 403 from the swap) keep the sign-in', async () => {
+  it('403 invalid_target from the swap (no longer allowed in the App) signs out, after a re-read', async () => {
+    const store = asyncStore();
+    seed(store);
+    const { fetch, calls } = backend({ swap: () => json(403, { error: 'invalid_target', error_description: 'Not invited' }) });
+    const auth = tab(store, fetch);
+    const changes = [];
+    auth.onChange(who => changes.push(who));
+    await assert.rejects(auth.token(), SignInRequired);
+    assert.equal(calls.swap.length, 1, 'not retried');
+    assert.equal(held(store), null);
+    assert.deepEqual(changes, [null], 'listeners hear of it');
+  });
+
+  it('403 invalid_target, but another tab just got a good token: uses theirs, does not sign out', async () => {
+    const store = asyncStore();
+    seed(store);
+    const { fetch } = backend({
+      swap: async () => {
+        await store.setItem(KEY, JSON.stringify({ platformToken: 'pt-other-tab', platformTokenExpiresAt: Date.now() + 900_000, refreshToken: 'rt-other' }));
+        return json(403, { error: 'invalid_target' });
+      },
+    });
+    const auth = tab(store, fetch);
+    assert.equal(await auth.token(), 'pt-other-tab');
+    assert.equal(held(store).platformToken, 'pt-other-tab');
+  });
+
+  it('other refusals (400 invalid_client from the realm; another 403, or a 401, from the swap) keep the sign-in', async () => {
     for (const answers of [
       { realm: () => json(400, { error: 'invalid_client' }) },
-      { swap: () => json(403, { error: 'invalid_target', error_description: 'Not invited' }) },
+      { swap: () => json(403, { error: 'access_denied' }) },
+      { swap: () => json(403, {}) },
+      { swap: () => json(401, { error: 'invalid_client' }) },
     ]) {
       const store = asyncStore();
       seed(store, { expiresInMs: -1000 });
       const { fetch } = backend(answers);
       const auth = tab(store, fetch);
+      const changes = [];
+      auth.onChange(who => changes.push(who));
       await assert.rejects(auth.token(), e => e instanceof AppError && !(e instanceof SignInRequired));
       assert.ok(held(store), 'still signed in');
+      assert.ok(await auth.signedIn());
+      assert.ok(changes.every(who => who !== null));
     }
   });
 });
