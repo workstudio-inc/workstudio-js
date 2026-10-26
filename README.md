@@ -309,6 +309,12 @@ await app.account.delete();
   `AiPaused` (AI is paused in the App for everyone on the person's plan, or for everyone - see below),
   `TurnFailed` (an answer that ended in an error; `notCharged` says it was not counted against the
   allowance), and `AppError` with `status` and a `message` fit to show.
+- **Staying signed in**: the SDK refreshes the platform token itself, one refresh at a time across
+  every tab of the App (Web Locks, else a localStorage lock). Being offline, or the sign-in service
+  being busy or down, never signs the person out: the refresh is retried, the token held is used while
+  it lasts, and after that calls fail with `AppError` (`code: 'NETWORK'` when offline) until the
+  connection is back. Only a refresh token the sign-in service no longer accepts ends the sign-in
+  (`SignInRequired`).
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
   an App version is approved), the monthly AI allowance per person, sign-in methods and branding.
