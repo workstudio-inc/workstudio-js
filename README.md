@@ -309,6 +309,10 @@ await app.account.delete();
   `AiPaused` (AI is paused in the App for everyone on the person's plan, or for everyone - see below),
   `TurnFailed` (an answer that ended in an error; `notCharged` says it was not counted against the
   allowance), and `AppError` with `status` and a `message` fit to show.
+- **Internal Apps** (sign-in for members of your organization only): `completeSignIn()` throws `NotAMember`
+  (`code: 'NOT_A_MEMBER'`, `organization`) for anyone whose verified email is not a member's - show its
+  `message` ("This app is only for Acme members.") and offer another account. `MEMBERSHIP_UNAVAILABLE` (503) means
+  membership could not be checked just now: try again.
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
   an App version is approved), the monthly AI allowance per person, sign-in methods and branding.

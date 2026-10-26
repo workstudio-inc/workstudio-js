@@ -1,5 +1,5 @@
 import type { KeyValueStore, ResolvedConfig } from './config';
-import { AppError, SignInRequired } from './errors';
+import { AppError, NotAMember, SignInRequired } from './errors';
 
 /** Who is signed in. */
 export interface SignedIn {
@@ -356,9 +356,19 @@ export class Auth {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: TOKEN_EXCHANGE, subject_token: tokens.access_token, subject_token_type: ACCESS_TOKEN_TYPE }),
     });
-    const body = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+    const body = (await res.json().catch(() => ({}))) as {
+      access_token?: string;
+      expires_in?: number;
+      error?: string;
+      error_description?: string;
+      /** The platform's own reason, beside the OAuth error: NOT_A_MEMBER, MEMBERSHIP_UNAVAILABLE. */
+      code?: string;
+      organization?: string;
+    };
     if (!res.ok || !body.access_token) {
-      throw new AppError(res.status, body.error_description ?? 'You could not be signed in just now. Please try again.', body.error);
+      // An internal App, and this person is not one of its organization's members.
+      if (body.code === 'NOT_A_MEMBER') throw new NotAMember(body.organization, body.error_description);
+      throw new AppError(res.status, body.error_description ?? 'You could not be signed in just now. Please try again.', body.code ?? body.error);
     }
     const profile = claims(tokens.id_token ?? tokens.access_token);
     return {

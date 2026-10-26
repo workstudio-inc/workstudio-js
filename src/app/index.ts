@@ -126,7 +126,7 @@ export type { BuyOptions, CreditBalance, CreditEstimate, CreditEstimateOptions, 
 export { Chat, Conversation, TurnFailed } from './chat';
 export type { ConversationSummary, Reply, SendOptions, StartOptions, Turn, Waived } from './chat';
 export type { AppConfig, KeyValueStore } from './config';
-export { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, NotForYourPlan, SignInRequired } from './errors';
+export { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, NotAMember, NotForYourPlan, SignInRequired } from './errors';
 export type { AiPausedReason } from './errors';
 export { Listings } from './listings';
 export type { Listing, ListingCard, ListingContact, ListingInput, ListingLocation, ListingNotSearchableReason, NearOptions, NearResult } from './listings';
