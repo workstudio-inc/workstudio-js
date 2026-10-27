@@ -145,7 +145,7 @@ export class Credits {
   /** The person's credits now. */
   async balance(options: CreditsOptions = {}): Promise<CreditBalance> {
     const maxAge = options.maxAgeMs ?? 30_000;
-    if (this.cached && Date.now() - this.cached.at <= maxAge) return this.cached.credits;
+    if (this.cached && Date.now() - this.cached.at < maxAge) return this.cached.credits;
     if (this.inFlight) return this.inFlight;
     this.inFlight = this.http
       .request<Record<string, unknown>>('GET', `${this.http.config.aiRuntimeUrl}/api/v1/workflow/ai-runtime/sessions/mine/credits`)
