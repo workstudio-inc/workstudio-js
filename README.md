@@ -621,6 +621,11 @@ const again = await app.workflows.get(runs[0].id);   // output is on get, never 
   rejects with `WaitTimeout` (code `WAIT_TIMEOUT`, `.run` the last state read); `signal` stops it. Neither stops the run.
 - `output` arrives on `get` (and `wait`) once FINISHED; over 256 KB it is not returned (`outputTooLarge: true`).
 - The same `idempotencyKey` again answers the first run and starts nothing.
+- **Who pays for AI inside the run: the publisher.** A run's AI steps are billed to the App's own organization - its
+  cost policies and plan allowance, like any of its automations - not to the person's credits or allowance, and not
+  to the App's shared pool. Before a run starts, the platform refuses it while the App's AI is paused
+  (`APP_AI_PAUSED`, `APP_FREE_POOL_PAUSED`); after that, the run's spend is the publisher's. Keep per-person cost in
+  check with `maxRunsPerPersonPerDay`, plans and features, and the App's own runs per day (default 5,000).
 - Refusals are `AppError` codes, with `retryAfter` (seconds) on a 429:
 
   | status | code | |
