@@ -22,6 +22,11 @@
       "types": "./dist/app.d.ts",
       "import": "./dist/app.js",
       "require": "./dist/app.cjs"
+    },
+    "./webhooks": {
+      "types": "./dist/webhooks.d.ts",
+      "import": "./dist/webhooks.js",
+      "require": "./dist/webhooks.cjs"
     }
   },
   "files": [
