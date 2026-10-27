@@ -317,7 +317,8 @@ await app.account.delete();
   allowance), and `AppError` with `status` and a `message` fit to show.
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
-  an App version is approved), the monthly AI allowance per person, sign-in methods and branding.
+  an App version is approved), the workflows its people may run (`workflows:`), the monthly AI allowance
+  per person, sign-in methods and branding.
 
 ### Plans: paid tiers for the App's people
 
@@ -585,6 +586,46 @@ const { grant, plan } = await app.invites.redeem(token);   // then a fresh token
   (`billing.checkoutLink()` answers `firstChargeAt`; then `plan.grant.keepsAfterGrant` and `plan.next`). A
   DIFFERENT plan starts at once and ends the grant. When a grant ends with nothing after it, the person is on the
   free plan again, keeping everything.
+
+### Workflows the App lets its people run
+
+An App can let its signed-in people start some of its workflows from its pages - "Build this month's report" - and
+follow the run. Deny by default: only a workflow the App declares (`workflows:` in its manifest, or in the designer),
+by the key it declares it under, within the plans, features and daily limit it sets. Each person sees only their own
+runs.
+
+```ts
+const list = await app.workflows.available();   // [{ key: 'export-report', allowed: true, limit: { perDay: 20, usedToday: 3, resetsAt } }, ...]
+// allowed false comes with reason: NEEDS_PLAN, DAILY_LIMIT or DISABLED
+
+const run = await app.workflows.run('export-report', { month: '2026-10' }, { idempotencyKey: tapId });   // QUEUED
+const done = await app.workflows.wait(run, { onUpdate: r => badge.set(r.status) });   // polls get() with backoff
+if (done.status === 'FINISHED') show(done.output);
+else if (done.status === 'WAITING_HUMAN') say(done.waiting?.label ?? 'Waiting for someone');
+else say(done.error);                     // FAILED, CANCELLED or TERMINATED
+
+const { runs, nextCursor } = await app.workflows.list({ workflow: 'export-report', limit: 20 });   // newest first
+const again = await app.workflows.get(runs[0].id);   // output is on get, never in a list
+```
+
+- `wait` polls (the platform's live run stream is for members): first after `intervalMs` (1 s; at once when given an
+  id), then 1.5 times longer each time up to `maxIntervalMs` (5 s). It resolves when the run is done, or parked:
+  a run waiting on a person - or on anything else - reads `WAITING_HUMAN`, with `waiting.type` (`HUMAN`, `AGENT`,
+  `ETL`, `CALLBACK`, `TASK`, `OTHER`); pass `untilWaiting: false` to wait past it. After `timeoutMs` (120 s) it
+  rejects with `WaitTimeout` (code `WAIT_TIMEOUT`, `.run` the last state read); `signal` stops it. Neither stops the run.
+- `output` arrives on `get` (and `wait`) once FINISHED; over 256 KB it is not returned (`outputTooLarge: true`).
+- The same `idempotencyKey` again answers the first run and starts nothing.
+- Refusals are `AppError` codes, with `retryAfter` (seconds) on a 429:
+
+  | status | code | |
+  |---|---|---|
+  | 404 | `WORKFLOW_NOT_FOUND` / `RUN_NOT_FOUND` | not declared or not runnable / not one of the person's runs |
+  | 403 | `NEEDS_PLAN` | their plan does not allow it |
+  | 400 | `INPUT_INVALID` / `INPUT_TOO_LARGE` / `BAD_IDEMPOTENCY_KEY` | input does not match the declared schema / over 64 KB |
+  | 409 | `IDEMPOTENCY_CONFLICT` | the key was used for another workflow |
+  | 429 | `DAILY_LIMIT` / `TOO_MANY_RUNNING` / `APP_DAILY_LIMIT` | their runs of it today (until UTC midnight) / 5 not finished / the App's cap |
+  | 429 | `APP_AI_PAUSED` / `APP_FREE_POOL_PAUSED` | thrown as `AiPaused` (see above) |
+  | 503 | `UNAVAILABLE` | try again |
 
 ## Build
 

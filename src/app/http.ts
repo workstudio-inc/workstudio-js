@@ -86,7 +86,7 @@ export class Http {
     }
     if (!res.ok) {
       const details = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined;
-      throw new AppError(res.status, messageOf(parsed, res.status), codeOf(parsed), details);
+      throw new AppError(res.status, messageOf(parsed, res.status), codeOf(parsed), details, retryAfterOf(res));
     }
     return parsed as T;
   }
@@ -106,6 +106,15 @@ function messageOf(body: unknown, status: number): string {
   if (status === 403) return 'That is not available to you.';
   if (status === 404) return 'That could not be found.';
   return 'Something went wrong. Please try again.';
+}
+
+/** `Retry-After` as seconds from now: delta-seconds, or an HTTP date. Undefined when absent or unreadable. */
+function retryAfterOf(res: Response): number | undefined {
+  const raw = res.headers?.get?.('Retry-After')?.trim();
+  if (!raw) return undefined;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? undefined : Math.max(0, Math.ceil((at - Date.now()) / 1000));
 }
 
 function codeOf(body: unknown): string | undefined {

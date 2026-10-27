@@ -35,6 +35,8 @@
  *   events    the App's own events ("lesson.cancelled"), now or at a time, about the person or a
  *             contact - which its automations email or push as the App
  *   notifications  which of the App's emails the person gets
+ *   workflows the workflows the App lets its people start (deny by default: only those it declares) - start
+ *             one, follow it until it is done or waits on someone, list the person's runs
  *
  * Isolation is the platform's, not the App's: every call carries the person's token, and the person
  * can only ever reach their own install of the App. See https://docs.work.studio.
@@ -54,6 +56,7 @@ import { Requests } from './requests';
 import { Account, Content, Data, Files, Images, Projects } from './resources';
 import { Shares } from './shares';
 import { SharedProjects } from './sharedProjects';
+import { Workflows } from './workflows';
 
 export interface App {
   readonly auth: Auth;
@@ -78,6 +81,8 @@ export interface App {
   readonly contacts: Contacts;
   readonly events: Events;
   readonly notifications: Notifications;
+  /** Workflows the App declares for its people: available, run, get, list, wait. */
+  readonly workflows: Workflows;
 }
 
 /** Create the client for one App. */
@@ -108,6 +113,7 @@ export function createApp(config: AppConfig): App {
     contacts: new Contacts(http),
     events: new Events(http),
     notifications: new Notifications(http),
+    workflows: new Workflows(http),
   };
 }
 
@@ -142,3 +148,5 @@ export { SharedProjects } from './sharedProjects';
 export type { NewProjectRevision, ProjectApproval, ProjectChangeRequest, ProjectChannel, ProjectContact, ProjectEntriesOptions, ProjectEntry, ProjectEntryType, ProjectParticipant, ProjectPrice, ProjectRevision, ProjectRevisionMeta, ProjectSide, ProjectStatus, SharedProject, SharedProjectListOptions, SharedProjectSummary } from './sharedProjects';
 export type { GuestShare, NewShare, Share, ShareComment, ShareDecision } from './shares';
 export type { Allowance, ContentFacet, ContentItem, ContentPack, ContentPage, ContentPageOptions, DataRecord, FindOptions, Me, Picture, PictureOptions, Project, ProjectInput, PublishedContentItem, StoredFile } from './resources';
+export { isRunDone, WaitTimeout, Workflows } from './workflows';
+export type { AvailableWorkflow, WaitOptions, WorkflowNotAllowedReason, WorkflowRefusal, WorkflowRun, WorkflowRunListOptions, WorkflowRunOptions, WorkflowRunPage, WorkflowRunStatus, WorkflowWaitingType } from './workflows';
