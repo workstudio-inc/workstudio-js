@@ -162,6 +162,47 @@ describe('app.requests (the requester)', () => {
     assert.equal(calls[1].url, `${BASE}/requests/r%2F1%20%3F/messages`);
   });
 
+  it('delete: DELETE the request, 204 answers undefined; the id is encoded', async () => {
+    const { app, calls } = client({ status: 204 }, { status: 204 });
+    assert.equal(await app.requests.delete('r1'), undefined);
+    await app.requests.delete('r/1 ?');
+    assertCall(calls[0], 'DELETE', `${BASE}/requests/r1`, undefined);
+    assert.equal(calls[1].url, `${BASE}/requests/r%2F1%20%3F`);
+  });
+
+  it('delete: not the person\'s request is a 404 REQUEST_NOT_FOUND, never a 403', async () => {
+    const { app } = client({ status: 404, body: { code: 'REQUEST_NOT_FOUND', message: 'You have no such request.' } });
+    await assert.rejects(app.requests.delete('r9'), e => e instanceof AppError && e.status === 404 && e.code === 'REQUEST_NOT_FOUND'
+      && e.message === 'You have no such request.');
+  });
+
+  it('create: attachments go in the body beside the payload, as given; one request reads them back', async () => {
+    const photo = { name: 'wall.jpg', contentType: 'image/jpeg', dataUrl: 'data:image/jpeg;base64,/9j/4A==' };
+    const read = { ...REQUEST, payload: { width: 50 }, attachments: [{ name: 'wall.jpg', contentType: 'image/jpeg', size: 4, dataUrl: photo.dataUrl }], messages: [] };
+    const { app, calls } = client({ status: 201, body: read }, { body: read }, { body: [REQUEST] });
+    const ask = { listingId: 'l1', kind: 'shop', title: 'Quote for a table', message: 'How much?', payload: { width: 50 }, attachments: [photo, { dataUrl: 'data:image/png;base64,iVBORw==' }] };
+    const made = await app.requests.create(ask);
+    assertCall(calls[0], 'POST', `${BASE}/requests`, ask);
+    assert.equal(made.attachments[0].size, 4);
+    const one = await app.requests.get('r1');
+    assert.equal(one.attachments[0].dataUrl, photo.dataUrl);
+    // A list leaves them out.
+    const [listed] = await app.requests.list();
+    assert.equal(listed.attachments, undefined);
+  });
+
+  it('create: attachment refusals carry their code', async () => {
+    const { app } = client(
+      { status: 400, body: { code: 'ATTACHMENTS_TOO_BIG', message: 'Attachments are at most 512 KB in all.' } },
+      { status: 400, body: { code: 'TOO_MANY_ATTACHMENTS', message: 'At most 3.' } },
+      { status: 400, body: { code: 'BAD_ATTACHMENT', message: 'Not an image.' } },
+    );
+    const ask = { listingId: 'l1', kind: 'shop', title: 't', message: 'm', attachments: [{ dataUrl: 'data:image/jpeg;base64,/9j/' }] };
+    await assert.rejects(app.requests.create(ask), e => e instanceof AppError && e.status === 400 && e.code === 'ATTACHMENTS_TOO_BIG');
+    await assert.rejects(app.requests.create(ask), e => e instanceof AppError && e.code === 'TOO_MANY_ATTACHMENTS');
+    await assert.rejects(app.requests.create(ask), e => e instanceof AppError && e.code === 'BAD_ATTACHMENT');
+  });
+
   it('refusals carry their code: WRONG_STATUS, SLOW_DOWN, REQUEST_NOT_FOUND', async () => {
     const { app } = client(
       { status: 409, body: { code: 'WRONG_STATUS', message: 'Not answered yet.' } },

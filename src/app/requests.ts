@@ -37,6 +37,31 @@ export interface RequestListing {
   contact?: { email?: string | null; phone?: string | null; website?: string | null } | null;
 }
 
+/**
+ * A small image the requester sent with a request (Crava: a photo of the space), as both sides read
+ * it. Cleared by the platform when the request ends - withdrawn, declined or closed; kept while it is
+ * accepted - and gone with a {@link Requests.delete}.
+ */
+export interface RequestAttachment {
+  name: string;
+  /** `image/jpeg`, `image/png` or `image/webp`. */
+  contentType: string;
+  /** Its bytes, decoded. */
+  size: number;
+  /** `data:<contentType>;base64,...` - usable as an `<img src>` as it is. */
+  dataUrl: string;
+}
+
+/**
+ * An attachment as {@link Requests.create} takes it: a base64 `data:` URL of a JPEG, PNG or WebP
+ * (no SVG). `contentType` may be left out (it is read from the URL); a `name` left out is made up.
+ */
+export interface NewRequestAttachment {
+  name?: string;
+  contentType?: string;
+  dataUrl: string;
+}
+
 /** Who sent a request: what they chose to share. */
 export interface RequestRequester {
   name: string;
@@ -65,6 +90,11 @@ export interface ListingRequest<T = Record<string, unknown>> {
   blocked?: boolean;
   /** With one request ({@link Requests.get}, {@link Inbox.get} and the actions); absent in a list. */
   payload?: T;
+  /**
+   * The requester's attachments, seen by both sides. With one request (an empty list when there are
+   * none, or once they were cleared); absent in a list.
+   */
+  attachments?: RequestAttachment[];
   /** With one request; absent in a list. */
   messages?: RequestMessage[];
   createdAt: string;
@@ -91,6 +121,13 @@ export interface NewRequest<T = Record<string, unknown>> {
    * "do not share".
    */
   contact?: { name?: string; email?: string; phone?: string };
+  /**
+   * Up to 3 small images for both sides to see - photos of the space, say - at most 512 KB of data URL
+   * in all (three ~100 KB JPEGs fit). Kept apart from `payload`: the platform clears them when the
+   * request ends (kept while accepted). Too many is a 400 `TOO_MANY_ATTACHMENTS`, too big
+   * `ATTACHMENTS_TOO_BIG`, not a JPEG/PNG/WebP that is what it says `BAD_ATTACHMENT`.
+   */
+  attachments?: NewRequestAttachment[];
 }
 
 export interface RequestListOptions {
@@ -152,11 +189,12 @@ export class Inbox {
  * Requests: a signed-in person asks a listing ({@link Listings}) for something - a quote, say - and
  * the two talk it through in a thread, with no email addresses swapped unless they choose to.
  *
- * The requester: {@link create}, {@link list}, {@link get}, {@link message}, {@link withdraw}, and -
- * once the owner has answered - {@link accept} or {@link decline}. The listing's owner: {@link inbox}.
+ * The requester: {@link create}, {@link list}, {@link get}, {@link message}, {@link withdraw},
+ * {@link delete}, and - once the owner has answered - {@link accept} or {@link decline}. The listing's
+ * owner: {@link inbox}.
  *
  * Limits: 3 open requests per thing asked about (`ref`, else `title`), 10 new requests a day, 30
- * messages an hour (429 `SLOW_DOWN`).
+ * messages an hour (429 `SLOW_DOWN`). Deleting a request does not give back the day's count.
  */
 export class Requests {
   /** The owner's side: requests sent to the person's listings. */
@@ -189,6 +227,16 @@ export class Requests {
   /** Take back an open or answered request. */
   withdraw<T = Record<string, unknown>>(id: string): Promise<ListingRequest<T>> {
     return this.http.request('POST', this.url(`/${encodeURIComponent(id)}/withdraw`));
+  }
+
+  /**
+   * Delete one of the person's requests for good, at any status: the request, its messages and its
+   * attachments, for both sides (the listing's owner is not told; it leaves their inbox). Resolves
+   * with nothing (204). Only the requester may; anyone else - the owner included - gets a 404
+   * `REQUEST_NOT_FOUND`. It still counts against the day's new requests.
+   */
+  delete(id: string): Promise<void> {
+    return this.http.request('DELETE', this.url(`/${encodeURIComponent(id)}`));
   }
 
   /** Take up the owner's answer; only while `answered` (else 409 `WRONG_STATUS`). */
