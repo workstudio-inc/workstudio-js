@@ -136,7 +136,27 @@ export interface DataRecord<T = Record<string, unknown>> {
   key?: string;
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * In a collection the App shares with its members (`shared: members`): who created the record and who changed it
+   * last - their end-user id, set by the platform from their sign-in, never by the App - and how each is shown (their
+   * verified email). Absent in a collection of each person's own records.
+   */
+  createdBy?: string;
+  createdByName?: string;
+  updatedBy?: string;
+  updatedByName?: string;
   [key: string]: unknown;
+}
+
+/** A record with who made and last changed it lifted from its `source`, where the platform keeps them. */
+function authored<T>(record: DataRecord<T>): DataRecord<T> {
+  const source = record?.source as Record<string, unknown> | undefined;
+  if (!source || typeof source !== 'object') return record;
+  const out: DataRecord<T> = { ...record };
+  for (const k of ['createdBy', 'createdByName', 'updatedBy', 'updatedByName'] as const) {
+    if (typeof source[k] === 'string') out[k] = source[k] as string;
+  }
+  return out;
 }
 
 export interface FindOptions {
@@ -148,7 +168,12 @@ export interface FindOptions {
   ascending?: boolean;
 }
 
-/** One of the collections the App declares. The person reads and writes only their own records. */
+/**
+ * One of the collections the App declares. The person reads and writes only their own records - unless the App is
+ * for its organisation's members (`signIn.audience: members`) and shares the collection (`shared: members`): then every
+ * signed-in member reads, adds, changes and deletes the same records, and each says who created and last changed it
+ * (`createdBy`, `updatedBy`, `...Name`). The calls are the same either way.
+ */
 export class Collection<T = Record<string, unknown>> {
   constructor(private readonly http: Http, readonly name: string) {}
 
@@ -165,13 +190,13 @@ export class Collection<T = Record<string, unknown>> {
     if (options.ascending !== undefined) q.set('ascending', String(options.ascending));
     const body = await this.http.request<{ records?: DataRecord<T>[]; items?: DataRecord<T>[] } | DataRecord<T>[]>(
       'GET', this.url(q.toString() ? `?${q}` : ''));
-    return Array.isArray(body) ? body : body?.records ?? body?.items ?? [];
+    return (Array.isArray(body) ? body : body?.records ?? body?.items ?? []).map(r => authored(r));
   }
 
   /** One record, or null when the person has no such record. */
   async get(id: string): Promise<DataRecord<T> | null> {
     try {
-      return await this.http.request<DataRecord<T>>('GET', this.url(`/${encodeURIComponent(id)}`));
+      return authored(await this.http.request<DataRecord<T>>('GET', this.url(`/${encodeURIComponent(id)}`)));
     } catch (e) {
       if ((e as { status?: number }).status === 404) return null;
       throw e;
@@ -179,8 +204,8 @@ export class Collection<T = Record<string, unknown>> {
   }
 
   /** Save a new record; with `key`, the record with that key is replaced instead of duplicated. */
-  create(data: T, options: { key?: string } = {}): Promise<DataRecord<T>> {
-    return this.http.request<DataRecord<T>>('POST', this.url(), { record: data, ...(options.key ? { key: options.key } : {}) });
+  async create(data: T, options: { key?: string } = {}): Promise<DataRecord<T>> {
+    return authored(await this.http.request<DataRecord<T>>('POST', this.url(), { record: data, ...(options.key ? { key: options.key } : {}) }));
   }
 
   /** Change some of a record's fields; the rest are kept. */
@@ -191,8 +216,8 @@ export class Collection<T = Record<string, unknown>> {
   }
 
   /** Replace a record's fields with these. */
-  replace(id: string, data: T): Promise<DataRecord<T>> {
-    return this.http.request<DataRecord<T>>('PUT', this.url(`/${encodeURIComponent(id)}`), { record: data });
+  async replace(id: string, data: T): Promise<DataRecord<T>> {
+    return authored(await this.http.request<DataRecord<T>>('PUT', this.url(`/${encodeURIComponent(id)}`), { record: data }));
   }
 
   async delete(id: string): Promise<boolean> {
@@ -210,8 +235,11 @@ export class Data {
     return new Collection<T>(this.http, name);
   }
 
-  /** The collections the App declares, as the platform defined them. */
-  collections(): Promise<Array<{ name: string; displayName?: string; fields?: unknown[]; [key: string]: unknown }>> {
+  /**
+   * The collections the App declares, as the platform defined them; `shared: 'members'` on one the App's members
+   * share.
+   */
+  collections(): Promise<Array<{ name: string; displayName?: string; fields?: unknown[]; shared?: 'members'; [key: string]: unknown }>> {
     return this.http.request('GET', `${this.http.config.dataUrl}/api/v1/workflow/data/collections`);
   }
 }
