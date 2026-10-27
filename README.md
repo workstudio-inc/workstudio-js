@@ -594,6 +594,8 @@ const { grant, plan } = await app.invites.redeem(token);   // then a fresh token
 
 ## App event webhooks: verify them on your backend (`@workstudio-inc/sdk/webhooks`)
 
+Since 0.12.0.
+
 An App's publisher can have its events sent to their own systems - their backend, Zapier, an App function. Add an
 endpoint in the designer (App > Webhooks), in the manifest (`webhooks:`), or with the catalog API
 (`POST /api/v1/workflow/catalog/integrations/{id}/end-user-access/webhooks`). The signing secret is shown once.
