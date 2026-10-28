@@ -349,6 +349,24 @@ await app.account.delete();
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
   an App version is approved), the monthly AI allowance per person, sign-in methods and branding.
 
+### Seeing the requests (debug)
+
+When a call fails and the error alone doesn't say why, turn on `debug`. Every request the SDK makes - sign-in, the
+token swap, data, conversations, plans - is then reported once it is answered: method, URL path, status, time, and
+for a refusal the platform's `code`. Headers (the person's token), bodies and the query string are never reported.
+
+```ts
+const app = createApp({ ...settings, debug: true });
+// [workstudio] GET https://api.work.studio/api/v1/workflow/data/collections/notes/records -> 403 (84 ms)
+
+// Or hand each one to your own logger:
+const app2 = createApp({ ...settings, debug: entry => myLog(entry) });   // { method, url, status, code?, ms }
+```
+
+It is also on, with no code change, when `WORKSTUDIO_DEBUG=1` is in the environment (Node, tests) or the page's
+`localStorage` has `workstudio:debug` set to `1` (run `localStorage.setItem('workstudio:debug', '1')` in the browser
+console and reload, on a deployed App too). `debug: false` keeps it off whatever the environment says.
+
 ### Plans: paid tiers for the App's people
 
 An App can sell plans - say Free with $1 of AI a month and Plus with $5 - paid to the App
