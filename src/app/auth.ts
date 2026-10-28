@@ -1,5 +1,5 @@
 import type { KeyValueStore, ResolvedConfig } from './config';
-import { AppError, SignInRequired } from './errors';
+import { AppError, NotAMember, SignInRequired } from './errors';
 import { refreshLock, type RefreshLock, type StorageLockOptions } from './refreshLock';
 
 /** Who is signed in. */
@@ -40,7 +40,8 @@ export interface RefreshTuning {
 const DEFAULT_RETRY: Required<RefreshRetry> = { attempts: 5, baseMs: 500, capMs: 8_000, maxRetryAfterMs: 30_000 };
 
 /** How a refresh ended: a token, signed out, or not reachable just now (still signed in). */
-type Refreshed = { token: string } | { signedOut: true } | { unavailable: AppError };
+/** How a refresh ended. `notAMember`: an internal App turned the person away - they are signed out by then. */
+type Refreshed = { token: string } | { signedOut: true } | { unavailable: AppError } | { notAMember: NotAMember };
 
 interface RealmTokens {
   access_token: string;
@@ -135,6 +136,7 @@ export class Auth {
   /** Bumped by every sign-in and sign-out here, so a refresh that outlives one never writes over it. */
   private epoch = 0;
   private readonly listeners = new Set<(who: SignedIn | null) => void>();
+  private readonly notMemberListeners = new Set<(refusal: NotAMember) => void>();
   private readonly signingOut = new Set<() => Promise<void>>();
   private readonly retry: Required<RefreshRetry>;
   private readonly lock: RefreshLock;
@@ -220,6 +222,26 @@ export class Auth {
   }
 
   /** Called whenever someone signs in or out, or their sign-in lapses. Returns an unsubscribe. */
+  /**
+   * Called when an internal App turns the person away (`NOT_A_MEMBER`): at sign-in, or later when their sign-in is
+   * renewed - say they left the organization. Show `refusal.message` ("This app is only for Acme members.") and offer
+   * another account; by then they are signed out here and on the hosted page. Returns an unsubscribe.
+   */
+  onNotAMember(listener: (refusal: NotAMember) => void): () => void {
+    this.notMemberListeners.add(listener);
+    return () => this.notMemberListeners.delete(listener);
+  }
+
+  private notAMember(refusal: NotAMember): void {
+    this.notMemberListeners.forEach(l => {
+      try {
+        l(refusal);
+      } catch {
+        /* a listener never changes what the caller gets */
+      }
+    });
+  }
+
   onChange(listener: (who: SignedIn | null) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -302,6 +324,7 @@ export class Auth {
       // sign-in there too: left open, the next sign-in - with another account - meets it and fails with
       // "already authenticated as a different user".
       this.endHostedSession(tokens.refresh_token);
+      if (e instanceof NotAMember) this.notAMember(e);
       throw e;
     }
     this.epoch++;
@@ -349,6 +372,9 @@ export class Auth {
    * token held is returned while it still works, and after that the error says why
    * (`AppError`, status 0 and code `NETWORK` when offline).
    * @throws SignInRequired when nobody is signed in or the sign-in has lapsed
+   * @throws NotAMember when an internal App no longer lets the person in (they are signed out)
+   * @throws AppError `MEMBERSHIP_UNAVAILABLE` when an internal App could not check membership just now and the token
+   *   held has run out (still signed in: try again)
    */
   async token(): Promise<string> {
     if (this.config.platformToken) {
@@ -363,6 +389,7 @@ export class Auth {
     const out = await this.refreshOnce(false);
     if ('token' in out) return out.token;
     if ('signedOut' in out) throw new SignInRequired('Your sign-in has expired. Please sign in again.');
+    if ('notAMember' in out) throw out.notAMember;
     // Not refreshed just now, but still signed in: the token held works until it expires.
     const held = this.current;
     if (held && held.platformTokenExpiresAt > Date.now()) return held.platformToken;
@@ -374,12 +401,15 @@ export class Auth {
    * changed, such as the person's plan and allowance after a checkout. False when nobody is signed in,
    * the App brings its own token, the sign-in service could not be reached (still signed in), or the
    * sign-in has lapsed (then the person must sign in again).
+   * @throws NotAMember when an internal App no longer lets the person in (they are signed out)
    */
   async renew(): Promise<boolean> {
     if (this.config.platformToken) return false;
     await this.load();
     if (!this.current) return false;
-    return 'token' in (await this.refreshOnce(true));
+    const out = await this.refreshOnce(true);
+    if ('notAMember' in out) throw out.notAMember;
+    return 'token' in out;
   }
 
   /** Forget the sign-in after the platform refused it, so the App asks the person again. */
@@ -532,6 +562,14 @@ export class Auth {
           this.epoch++;
           await this.save(null);
         }
+        if (failed.code === 'NOT_A_MEMBER') {
+          // An internal App turned them away - they left the organization, say. Said, not a silent sign-out, so
+          // the App can tell them why; the hosted sign-in is ended too, so another account can be tried.
+          const refusal = new NotAMember(failed.organization, failed.description);
+          this.endHostedSession(who.refreshToken);
+          this.notAMember(refusal);
+          return { notAMember: refusal };
+        }
         return { signedOut: true };
       }
       const error = asError(failed, phase);
@@ -562,6 +600,8 @@ export class Auth {
       status: res.status,
       error: typeof body?.error === 'string' ? body.error : undefined,
       description: typeof body?.error_description === 'string' ? body.error_description : undefined,
+      code: typeof body?.code === 'string' ? body.code : undefined,
+      organization: typeof body?.organization === 'string' ? body.organization : undefined,
       retryAfterMs: retryAfterMs(res.headers?.get?.('Retry-After') ?? null),
     };
   }
@@ -577,7 +617,9 @@ export class Auth {
     const answer = await this.call(`${this.config.apiUrl}/api/v1/workflow/connection/oauth/token`, swapForm(tokens));
     if (!answer.ok || typeof answer.body.access_token !== 'string') {
       const failed = answer.ok ? undefined : answer;
-      throw new AppError(failed?.status ?? 502, failed?.description ?? 'You could not be signed in just now. Please try again.', failed?.error);
+      // An internal App, and this person is not one of its organization's members.
+      if (failed?.code === 'NOT_A_MEMBER') throw new NotAMember(failed.organization, failed.description);
+      throw new AppError(failed?.status ?? 502, failed?.description ?? 'You could not be signed in just now. Please try again.', failed?.code ?? failed?.error);
     }
     return signedInFrom(tokens, answer.body as unknown as SwapAnswer, tokens.refresh_token);
   }
@@ -596,6 +638,10 @@ interface Failed {
   status: number;
   error?: string;
   description?: string;
+  /** The platform's own reason, beside the OAuth error: NOT_A_MEMBER, MEMBERSHIP_UNAVAILABLE. */
+  code?: string;
+  /** With NOT_A_MEMBER: the organization's name, when the platform said it. */
+  organization?: string;
   retryAfterMs?: number;
 }
 
@@ -648,7 +694,7 @@ function asError(failed: Failed, phase: 'refresh' | 'swap'): AppError {
   const message =
     failed.description ??
     (transient(failed.status) ? 'Your sign-in could not be renewed just now. Please try again shortly.' : phase === 'swap' ? 'You could not be signed in just now. Please try again.' : 'Sign-in did not complete. Please try again.');
-  return new AppError(failed.status, message, failed.error);
+  return new AppError(failed.status, message, failed.code ?? failed.error);
 }
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));

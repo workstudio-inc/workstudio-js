@@ -26,6 +26,27 @@ export class SignInRequired extends AppError {
   }
 }
 
+/**
+ * The App is only for members of the organization that publishes it - an internal App - and this person is not one,
+ * or signed in with an address that is not verified (code `NOT_A_MEMBER`, 403). Show `message` - "This app is only
+ * for Acme members." - and offer to sign in with another account. `organization` is its name when the platform said it.
+ */
+export class NotAMember extends AppError {
+  readonly organization?: string;
+
+  constructor(organization?: string, message?: string) {
+    super(
+      403,
+      message || (organization ? `This app is only for ${organization} members.` : 'This app is only for members of the organization that publishes it.'),
+      'NOT_A_MEMBER',
+      organization ? { organization } : undefined,
+    );
+    this.name = 'NotAMember';
+    this.organization = organization;
+    Object.setPrototypeOf(this, NotAMember.prototype);
+  }
+}
+
 /** The person has used this month's AI allowance the App gives them; it resets on the 1st (UTC). */
 export class AllowanceUsed extends AppError {
   constructor(message = 'This month’s AI allowance is used up.') {
