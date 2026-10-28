@@ -1,3 +1,5 @@
+import { type DebugOption, loggedFetch, sinkFor } from './debug';
+
 /** Somewhere to keep the sign-in between visits. `localStorage` fits the browser; a phone app may pass secure storage. */
 export interface KeyValueStore {
   getItem(key: string): string | null | Promise<string | null>;
@@ -36,6 +38,13 @@ export interface AppConfig {
   platformToken?: () => Promise<string | null> | string | null;
   /** The fetch to use. Defaults to the global one. */
   fetch?: typeof fetch;
+  /**
+   * Report every request the SDK makes once it is answered: method, URL path, status, time and a refusal's `code` -
+   * never headers, bodies or the query string. `true` writes `[workstudio] GET https://... -> 404 (12 ms)` to the
+   * console; a function receives each {@link RequestLog} instead. Also on, unless this says `false`, with
+   * `WORKSTUDIO_DEBUG=1` in the environment or `localStorage['workstudio:debug'] = '1'` in the page.
+   */
+  debug?: DebugOption;
 }
 
 export interface ResolvedConfig extends AppConfig {
@@ -54,8 +63,11 @@ export function resolve(config: AppConfig): ResolvedConfig {
     throw new Error('createApp needs signInIssuer and clientId for sign-in (or a platformToken function).');
   }
   const apiUrl = trim(config.apiUrl);
-  const f = config.fetch ?? (typeof fetch === 'function' ? fetch.bind(globalThis) : undefined);
-  if (!f) throw new Error('No fetch available: pass one in the config.');
+  const plain = config.fetch ?? (typeof fetch === 'function' ? fetch.bind(globalThis) : undefined);
+  if (!plain) throw new Error('No fetch available: pass one in the config.');
+  // Every request goes through config.fetch, so reporting there sees them all: data, sign-in, conversations.
+  const sink = sinkFor(config.debug);
+  const f = sink ? loggedFetch(plain, sink) : plain;
   return {
     ...config,
     apiUrl,
