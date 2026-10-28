@@ -64,5 +64,6 @@ test('the event types are the catalogue', () => {
   assert.ok(APP_WEBHOOK_EVENT_TYPES.includes('person.signed_up'));
   assert.ok(APP_WEBHOOK_EVENT_TYPES.includes('record.updated'));
   assert.ok(!APP_WEBHOOK_EVENT_TYPES.includes('webhook.test'));
-  assert.equal(APP_WEBHOOK_EVENT_TYPES.length, 15);
+  assert.ok(APP_WEBHOOK_EVENT_TYPES.includes('app.workflow.run.finished'));
+  assert.equal(APP_WEBHOOK_EVENT_TYPES.length, 16);
 });

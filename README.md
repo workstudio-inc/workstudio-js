@@ -640,14 +640,18 @@ export default { async fetch(request: Request, env: { SECRET: string }) {
   only: delete what you keep), `plan.started | changed | cancelled | renewed | payment_failed`, `credits.purchased`,
   `invite.redeemed`, `record.created | updated | deleted` (for collections you opt in: the record id and the NAMES of
   the fields written, never values - read the record with your own credentials), `app.event` (your App's own events:
-  only their `number` and `choice` fields), `deployment.live`, `usage.limit_reached`, and `webhook.test`.
+  only their `number` and `choice` fields), `app.workflow.run.finished` (a run one of your people started from the App
+  ended: `runId`, `workflowId`, `workflowKey`, `status` FINISHED / FAILED / CANCELLED / TERMINATED, `finishedAt`,
+  `person.id`; never its input, output or error), `deployment.live`, `usage.limit_reached`, and `webhook.test`.
 - **At least once, except:** `record.*` events are best-effort in v1 (they wait in an in-memory queue in the data
   service; a restart or overload can drop some, and work.studio counts what it drops) - treat them as a hint and
   reconcile by reading the collection. `deployment.live` and `usage.limit_reached` are handed over right after the
   change (tried three times), not in its transaction. `plan.*` events come from comparing the plan a person now has with
   the one last seen, written together with that comparison; when a plan change was saved on its own (checkout, store
   notices, sweeps) and the platform stopped before the comparison, the change is reported at the person's next plan
-  update. Every other event is written in the same transaction as the change that raised it.
+  update. `app.workflow.run.finished` is written with the run's ended status, which work.studio notices when the person
+  reads the run or, within about a minute or two, by itself (for runs up to 7 days old). Every other event is written in
+  the same transaction as the change that raised it.
 - **Delivery:** at least once. Retried with backoff (30 s doubling to 2 h) for 24 hours on anything but a 2xx; a 410
   switches the endpoint off. After 20 failures in a row (about a day) the endpoint is switched off and the App's owners
   are emailed; events are held for 7 days and sent, oldest first, when you turn it back on. First attempts leave in

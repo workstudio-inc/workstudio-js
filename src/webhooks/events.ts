@@ -1,12 +1,12 @@
 /**
- * The App events work.studio sends to a publisher's webhook endpoints (catalogue 2026-10-26).
+ * The App events work.studio sends to a publisher's webhook endpoints (catalogue 2026-10-27).
  *
  * Every event has the same envelope; `data` depends on `type`. Fields may be added to a type without a new `version`;
  * a field removed or changed in meaning is a new version, announced first. Ignore fields you do not know.
  */
 
 /** The catalogue version these types describe. */
-export const WEBHOOK_CATALOG_VERSION = '2026-10-26';
+export const WEBHOOK_CATALOG_VERSION = '2026-10-27';
 
 /** A person, by the id the App's People view shows. */
 export interface WebhookPerson {
@@ -68,6 +68,21 @@ export interface AppWebhookEventDataMap {
   'record.deleted': { collection: string; record: { id: string }; person: WebhookPerson | null };
   /** The App's own event (app.events): only its `number` and `choice` fields. */
   'app.event': { name: string; fields: Record<string, string | number>; person: WebhookPerson };
+  /**
+   * A workflow run one of your App's people started from the App (`app.workflows.run`) ended. Read its output with
+   * your own credentials if you need it; the input, output and error are never sent.
+   */
+  'app.workflow.run.finished': {
+    runId: string;
+    /** The workflow your App declares (its global id). */
+    workflowId: string | null;
+    /** Your App's own name for it (the key under `workflows:`). */
+    workflowKey: string;
+    status: 'FINISHED' | 'FAILED' | 'CANCELLED' | 'TERMINATED';
+    /** ISO 8601. */
+    finishedAt: string;
+    person: WebhookPerson;
+  };
   'deployment.live': {
     deployment: { id: string; url: string | null; message: string | null };
     environmentId: string;
@@ -108,6 +123,7 @@ export const APP_WEBHOOK_EVENT_TYPES: readonly AppWebhookEventType[] = [
   'record.updated',
   'record.deleted',
   'app.event',
+  'app.workflow.run.finished',
   'deployment.live',
   'usage.limit_reached',
 ] as const;
