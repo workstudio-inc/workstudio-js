@@ -124,7 +124,7 @@ export type { DeletionCheck, ManageTarget, Restored, RestoredPurchase, RestoreRe
 export { Credits } from './credits';
 export type { BuyOptions, CreditBalance, CreditEstimate, CreditEstimateOptions, CreditHistory, CreditHistoryEntry, CreditMoney, CreditPack, CreditPacks, CreditPacksOptions, CreditPacksWhy, CreditsOptions, CreditUnit } from './credits';
 export { Chat, Conversation, TurnFailed } from './chat';
-export type { ConversationSummary, ReconnectOptions, Reply, SendOptions, StartOptions, Turn, TurnOutcome, Waived } from './chat';
+export type { ConversationSummary, ReconnectOptions, Reply, SendOptions, StartOptions, StopResult, Turn, TurnOutcome, Waived } from './chat';
 export type { AppConfig, KeyValueStore } from './config';
 export { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, NotForYourPlan, SignInRequired } from './errors';
 export type { AiPausedReason } from './errors';

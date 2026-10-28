@@ -150,3 +150,19 @@ test('a refused sign-in is SignInRequired, as everywhere else', async () => {
   const { app } = appWith(() => [401, {}]);
   await assert.rejects(app.chat.reconnect('s1'), SignInRequired);
 });
+
+test('stop() stops the turn as the person, wherever it runs, and says which', async () => {
+  const answers = ['stopping', 'stopped', 'not_running'];
+  const { app, calls } = appWith(url => (url.endsWith('/stop') ? { result: answers.shift() } : [404, {}]));
+  assert.equal(await app.chat.stop('s1'), 'stopping');
+  assert.equal(await app.chat.stop({ id: 's1' }), 'stopped');
+  assert.equal(await app.chat.stop('s1'), 'not_running');
+  assert.equal(calls[0].method, 'POST');
+  assert.match(calls[0].url, /sessions\/mine\/s1\/stop$/);
+  assert.equal(calls[0].auth, 'Bearer person-token');
+});
+
+test('stop() on a conversation that is not theirs: not_running (404), nothing stopped', async () => {
+  const { app } = appWith(() => [404, { error: 'not found' }]);
+  assert.equal(await app.chat.stop('s1'), 'not_running');
+});

@@ -94,6 +94,12 @@ export interface TurnOutcome {
   endedAt?: number;
 }
 
+/**
+ * What `stop()` did: `stopped` (at once), `stopping` (another server runs the turn and stops it within seconds -
+ * `reconnect` or `turn` then reads `cancelled`), or `not_running`.
+ */
+export type StopResult = 'stopped' | 'stopping' | 'not_running';
+
 export interface ReconnectOptions {
   /** Called with the reply's text as it arrives: first what streamed before the reload, then each new piece. */
   onText?: (piece: string) => void;
@@ -154,6 +160,11 @@ export class Conversation {
   /** Whether a turn is running in this conversation now (on any server). */
   isRunning(): Promise<boolean> {
     return new Turns(this.http).isRunning(this.id);
+  }
+
+  /** Stop this conversation's running turn, on whichever server runs it - see `chat.stop`. */
+  stop(): Promise<StopResult> {
+    return new Turns(this.http).stop(this.id);
   }
 
   /** Reattach to this conversation's turn - see `chat.reconnect`. */
@@ -348,6 +359,16 @@ class Turns {
     }
   }
 
+  async stop(id: string): Promise<StopResult> {
+    try {
+      const body = await this.http.request<{ result?: string }>('POST', this.url(id, '/stop'), {});
+      return body?.result === 'stopped' || body?.result === 'stopping' ? body.result : 'not_running';
+    } catch (e) {
+      if (e instanceof AppError && e.status === 404) return 'not_running';
+      throw e;
+    }
+  }
+
   async outcome(id: string, turnId?: string): Promise<TurnOutcome | null> {
     try {
       const raw = await this.http.request<Record<string, unknown>>('GET',
@@ -475,6 +496,15 @@ export class Chat {
    */
   reconnect(conversation: Conversation | string, options: ReconnectOptions = {}): Promise<TurnOutcome | null> {
     return this.turns.reconnect(idOf(conversation), options);
+  }
+
+  /**
+   * Stop the turn running in one of the person's conversations - on whichever server runs it, also after a
+   * reload. Like pressing Stop: what the turn used so far is kept. `stopping` means another server runs it and
+   * stops it within seconds; the turn then reads `cancelled`.
+   */
+  stop(conversation: Conversation | string): Promise<StopResult> {
+    return this.turns.stop(idOf(conversation));
   }
 
   /**

@@ -285,6 +285,7 @@ const outcome = await app.chat.reconnect(again, { onText: piece => render(piece)
 //   with turnRef, chargedUsd, refunded, refundPending and notCharged - say "nothing was charged" only when true.
 await app.chat.turn(again);                // the latest turn's outcome (with its answer)
 await app.chat.turn(again, outcome.turnId); // one turn's outcome by id, kept 7 days
+await app.chat.stop(again);                // Stop, on whichever server runs it: 'stopped' | 'stopping' | 'not_running'
 
 // Records in a collection the App declares - only this person's
 const designs = app.data.collection<{ title: string; status: string }>('crava_designs');
