@@ -254,9 +254,12 @@ export class DesignRunRefused extends AppError {
   }
 }
 
-/** The HTTP status a design-run refusal has on the endpoints; on a stream (no status), the same by code. */
+/**
+ * The HTTP status the platform gives a design-run refusal (a turn refused before its stream, the design-run endpoints):
+ * 400 invalid, 403 not yours, 429 holds busy, 409 closed / expired / fix limit. On a stream (no status), the same by code.
+ */
 function designRunStatus(code: DesignRunCode): number {
-  return code === 'DESIGN_RUN_INVALID' ? 400 : code === 'DESIGN_RUN_NOT_YOURS' ? 403 : 409;
+  return code === 'DESIGN_RUN_INVALID' ? 400 : code === 'DESIGN_RUN_NOT_YOURS' ? 403 : code === 'DESIGN_HOLDS_BUSY' ? 429 : 409;
 }
 
 const TAG = /\s*\[ws:(APP_FREE_POOL_PAUSED|APP_AI_PAUSED|CREDITS_USED_UP|DAILY_LIMIT|DESIGN_[A-Z_]+)((?:;[a-zA-Z]+=[^;\]]*)*)\]/;

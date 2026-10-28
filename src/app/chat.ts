@@ -230,7 +230,8 @@ export class Conversation {
     });
     if (res.status === 401) throw new AppError(401, 'This conversation has ended. Start it again to carry on.', 'CONVERSATION_ENDED');
     if (!res.ok) {
-      // Refused before the stream began (429 "temporarily unavailable", say): the same typed refusals as on the stream.
+      // Refused before the stream began - a known-bad design run (400 / 403 / 409, or 429 DESIGN_HOLDS_BUSY), or 429
+      // "temporarily unavailable" - whatever the status: the same typed refusals as on the stream, keeping the status.
       const body = await res.json().catch(() => null) as Record<string, unknown> | null;
       const refused = body && typeof body === 'object' ? refusalOf(body, undefined, res.status) : null;
       if (refused) throw refused instanceof DesignRunRefused ? refused : this.http.paused(refused);

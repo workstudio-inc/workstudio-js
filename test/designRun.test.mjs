@@ -121,7 +121,8 @@ test('every DESIGN_* error event on the stream throws DesignRunRefused with its 
       assert.equal(e.reason, 'design_run');
       assert.equal(e.retryable, false);
       assert.equal(e.message, `words for ${code}`);
-      assert.equal(e.status, code === 'DESIGN_RUN_INVALID' ? 400 : code === 'DESIGN_RUN_NOT_YOURS' ? 403 : 409);
+      assert.equal(e.status, code === 'DESIGN_RUN_INVALID' ? 400 : code === 'DESIGN_RUN_NOT_YOURS' ? 403
+        : code === 'DESIGN_HOLDS_BUSY' ? 429 : 409);
       assert.equal(e instanceof AiPaused || e instanceof TurnFailed || e instanceof CreditsUsedUp, false);
       return true;
     });
@@ -193,6 +194,49 @@ test('a turn refused before its stream began (HTTP 429) is AiPaused, retryable; 
     && e.code === 'DESIGN_RUN_NOT_YOURS' && e.status === 403);
   r = await chatWith([500, { error: 'boom' }]);
   await assert.rejects(r.conversation.send('go'), e => e instanceof AppError && !(e instanceof AiPaused) && e.status === 500);
+});
+
+test('a known-bad run refused before the stream (400 / 403 / 409, reason design_run) is DesignRunRefused with that status', async () => {
+  const PRE_STREAM = [
+    [400, 'DESIGN_RUN_INVALID'],
+    [403, 'DESIGN_RUN_NOT_YOURS'],
+    [409, 'DESIGN_RUN_CLOSED'],
+    [409, 'DESIGN_RUN_EXPIRED'],
+    [409, 'DESIGN_RUN_FIX_LIMIT'],
+  ];
+  for (const [status, code] of PRE_STREAM) {
+    const words = `words for ${code}`;
+    const { app, conversation, turns } = await chatWith([status, { code, message: words, error: words, reason: 'design_run',
+      retryable: false, retryAfterSeconds: 0 }]);
+    await assert.rejects(conversation.send('fix it', { designRun: { id: RUN } }), e => {
+      assert.ok(e instanceof DesignRunRefused, code);
+      assert.equal(e.code, code);
+      assert.equal(e.status, status);
+      assert.equal(e.reason, 'design_run');
+      assert.equal(e.retryable, false);
+      assert.equal(e.message, words);
+      assert.equal(e.details.reason, 'design_run');
+      assert.equal(e instanceof AiPaused || e instanceof CreditsUsedUp || e instanceof TurnFailed, false);
+      return true;
+    });
+    assert.equal(turns().length, 1, 'sent once, never again by the SDK');
+    assert.equal((await app.ai.status()).paused, false, `${code} does not pause AI`);
+  }
+});
+
+test('DESIGN_HOLDS_BUSY over HTTP is 429 but a DesignRunRefused, never an AiPaused', async () => {
+  const words = 'You already have designs in progress. Finish one, then start this one.';
+  const { app, conversation } = await chatWith([429, { code: 'DESIGN_HOLDS_BUSY', message: words, error: words,
+    reason: 'design_run', retryable: false, retryAfterSeconds: 0 }]);
+  await assert.rejects(conversation.send('a desk', { designRun: { id: RUN } }), e => e instanceof DesignRunRefused
+    && !(e instanceof AiPaused) && e.code === 'DESIGN_HOLDS_BUSY' && e.status === 429 && e.retryable === false);
+  assert.equal((await app.ai.status()).paused, false);
+});
+
+test('a pre-stream refusal with no design or pause code stays a plain AppError carrying its code', async () => {
+  const { conversation } = await chatWith([409, { code: 'DUPLICATE_MESSAGE', message: 'Already sent.' }]);
+  await assert.rejects(conversation.send('go', { designRun: { id: RUN } }), e => e instanceof AppError
+    && !(e instanceof DesignRunRefused) && e.status === 409 && e.code === 'DUPLICATE_MESSAGE');
 });
 
 test('isDesignRunCode', () => {

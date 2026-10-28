@@ -639,7 +639,8 @@ await app.credits.designRuns.close(run.id);                     // done or aband
 - A run ends when the App closes it, after its last allowed turn, or 45 minutes after it opened; what is left of
   its hold is released. Ids are never reopened. Close runs the App abandons.
 - Refusals throw `DesignRunRefused` (`reason: 'design_run'`, `retryable: false`), its `code` one of
-  `DESIGN_RUN_CODES`:
+  `DESIGN_RUN_CODES` - on the stream, or before it for a run already known bad, with the platform's `status`
+  (400 invalid, 403 not yours, 409 closed / expired / fix limit; 429 holds busy):
 
 | `code` | When | The App should |
 |---|---|---|
