@@ -1,3 +1,4 @@
+import { DesignRuns } from './designRuns';
 import { AppError, NotForYourPlan, SignInRequired } from './errors';
 import type { Http } from './http';
 
@@ -129,13 +130,17 @@ export interface CreditHistory {
  * - `estimate('picture')` and `estimate('design')` give "about N" for the buttons that start them.
  * - `packs()` and `buy()` sell credit packs (web: Stripe Checkout on the publisher's account).
  * - `history()` lists bought credits: purchases, refunds, a line per day of use.
+ * - `designRuns` reads and closes the person's design runs (a design's rounds, held for together).
  */
 export class Credits {
   private cached: { credits: CreditBalance; at: number } | null = null;
   private inFlight: Promise<CreditBalance> | null = null;
   private readonly listeners = new Set<(c: CreditBalance) => void>();
+  /** The person's design runs: `get(id)` and `close(id)`. Opened by a chat turn's `designRun`. */
+  readonly designRuns: DesignRuns;
 
   constructor(private readonly http: Http) {
+    this.designRuns = new DesignRuns(http);
     this.http.onCredits(raw => {
       const c = read(raw);
       if (c) this.seen(c);

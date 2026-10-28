@@ -1,6 +1,7 @@
 import type { Http } from './http';
-import { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, SignInRequired } from './errors';
+import { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, DesignRunRefused, refusalOf, SignInRequired } from './errors';
 import { read as readCredits, type CreditBalance } from './credits';
+import { checkDesignRunId, DESIGN_RUN_MAX_FIX_TURNS } from './designRuns';
 
 /** One of the person's conversations, as listed. */
 export interface ConversationSummary {
@@ -44,6 +45,36 @@ export interface SendOptions {
   signal?: AbortSignal;
   /** The person's language, e.g. `navigator.language`. */
   locale?: string;
+  /**
+   * The design run this turn belongs to, in an App with credits: round 0 of a design and its fix rounds send the same
+   * `id`. The first turn naming a new id opens the run and holds the credits the whole design needs (round 0 and
+   * `fixTurns` fix rounds), so its fix rounds are not refused half way; later turns naming it run on that hold. Close
+   * the run when the design is done or abandoned (`credits.designRuns.close`). A platform from before design runs
+   * ignores it, and the turn is admitted on its own as always.
+   */
+  designRun?: DesignRunOptions;
+}
+
+/** A turn's design run: see {@link SendOptions.designRun}. */
+export interface DesignRunOptions {
+  /** The App's own id for the design: a UUID (`crypto.randomUUID()`) is best; any 8-64 of `[A-Za-z0-9_-]`. */
+  id: string;
+  /**
+   * Fix turns the run holds for besides round 0 - a whole number from 0 to {@link DESIGN_RUN_MAX_FIX_TURNS}. Read only by
+   * the turn that opens the run. Default: the platform's (3). The platform may hold for fewer.
+   */
+  fixTurns?: number;
+}
+
+/** The body fields a turn's design run is sent as: `designRunId`, and `designFixTurns` when given. */
+function designRunFields(run: DesignRunOptions | undefined): { designRunId?: string; designFixTurns?: number } {
+  if (!run) return {};
+  const designRunId = checkDesignRunId(run.id);
+  if (run.fixTurns === undefined || run.fixTurns === null) return { designRunId };
+  if (!Number.isInteger(run.fixTurns) || run.fixTurns < 0 || run.fixTurns > DESIGN_RUN_MAX_FIX_TURNS) {
+    throw new DesignRunRefused('DESIGN_RUN_INVALID', { message: `designRun.fixTurns is a whole number from 0 to ${DESIGN_RUN_MAX_FIX_TURNS}.` });
+  }
+  return { designRunId, designFixTurns: run.fixTurns };
 }
 
 export interface Reply {
@@ -179,6 +210,8 @@ export class Conversation {
 
   /** Send a message and stream the reply; resolves with the whole reply. */
   async send(message: string, options: SendOptions = {}): Promise<Reply> {
+    // Checked first: a bad design run id is the App's bug, refused before any file is uploaded.
+    const designRun = designRunFields(options.designRun);
     const attachmentIds: string[] = [];
     for (const [i, file] of (options.attachments ?? []).entries()) attachmentIds.push(await this.attach(file, i + 1));
 
@@ -192,11 +225,18 @@ export class Conversation {
     const res = await this.http.config.fetch(`${this.runtimeUrl}/api/v1/workflow/ai-runtime/direct/sessions/${this.id}/messages/stream`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ message, ...(attachmentIds.length ? { attachmentIds } : {}) }),
+      body: JSON.stringify({ message, ...(attachmentIds.length ? { attachmentIds } : {}), ...designRun }),
       signal: options.signal,
     });
     if (res.status === 401) throw new AppError(401, 'This conversation has ended. Start it again to carry on.', 'CONVERSATION_ENDED');
-    if (!res.ok || !res.body) throw new AppError(res.status, 'No answer just now. Please try again.');
+    if (!res.ok) {
+      // Refused before the stream began (429 "temporarily unavailable", say): the same typed refusals as on the stream.
+      const body = await res.json().catch(() => null) as Record<string, unknown> | null;
+      const refused = body && typeof body === 'object' ? refusalOf(body, undefined, res.status) : null;
+      if (refused) throw refused instanceof DesignRunRefused ? refused : this.http.paused(refused);
+      throw new AppError(res.status, 'No answer just now. Please try again.', typeof body?.code === 'string' ? body.code : undefined);
+    }
+    if (!res.body) throw new AppError(res.status, 'No answer just now. Please try again.');
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -244,7 +284,11 @@ export class Conversation {
           // The person's credits cannot start a turn now: shown as "out of credits", never as an error.
           const outOfCredits = CreditsUsedUp.from(event, msg);
           if (outOfCredits) throw this.http.paused(outOfCredits);
-          // The App's AI paused (its plan's shared pool, or the App's own budget) - not the person's allowance.
+          // The design run this turn named may not be used as asked (DESIGN_*): not a pause, nothing to wait for.
+          const designRefused = DesignRunRefused.from(event, msg);
+          if (designRefused) throw designRefused;
+          // The App's AI paused (its plan's shared pool, or the App's own budget) - not the person's allowance - or,
+          // `retryable`, "temporarily unavailable" for a minute.
           const paused = AiPaused.from(event, msg);
           if (paused) throw this.http.paused(paused);
           if (code === 'BUDGET_EXCEEDED' || code === 'COST_POLICY_EXCEEDED') throw new AllowanceUsed(msg);
