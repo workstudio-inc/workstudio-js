@@ -126,7 +126,7 @@ export type { BuyOptions, CreditBalance, CreditEstimate, CreditEstimateOptions, 
 export { Chat, Conversation, TurnFailed } from './chat';
 export type { ConversationSummary, ReconnectOptions, Reply, SendOptions, StartOptions, StopResult, Turn, TurnOutcome, Waived } from './chat';
 export type { AppConfig, KeyValueStore } from './config';
-export { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, NotForYourPlan, SignInRequired } from './errors';
+export { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, NotForYourPlan, SignInRequired, VersionMismatchError } from './errors';
 export type { AiPausedReason } from './errors';
 export { Listings } from './listings';
 export type { Listing, ListingCard, ListingContact, ListingInput, ListingLocation, ListingNotSearchableReason, NearOptions, NearResult } from './listings';
@@ -137,6 +137,7 @@ export type { PushData, PushDevice, PushPlatform, PushPreferences, PushTransport
 export { Inbox, Requests } from './requests';
 export type { ListingRequest, NewRequest, NewRequestAttachment, RequestAttachment, RequestBlock, RequestListing, RequestListOptions, RequestMessage, RequestParty, RequestRequester, RequestShare, RequestStatus } from './requests';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Images, Projects } from './resources';
+export type { ProjectUpdateOptions } from './resources';
 export { Shares } from './shares';
 export { SharedProjects } from './sharedProjects';
 export type { NewProjectRevision, ProjectApproval, ProjectChangeRequest, ProjectChannel, ProjectContact, ProjectEntriesOptions, ProjectEntry, ProjectEntryType, ProjectParticipant, ProjectPrice, ProjectRevision, ProjectRevisionMeta, ProjectSide, ProjectStatus, SharedProject, SharedProjectListOptions, SharedProjectSummary } from './sharedProjects';

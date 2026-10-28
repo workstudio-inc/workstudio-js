@@ -261,6 +261,17 @@ if (!(await app.auth.signedIn())) await app.auth.signIn({ method: 'google' });
 // Their own projects
 const project = await app.projects.create({ name: 'Kitchen side table' });
 
+// Settings merge key by key; a key set to null is removed. Every read carries `version` (0.13.0): pass it back as
+// expectedVersion to write only if nobody else has since - here, one device claims a running design, and another
+// device that read the same version gets VersionMismatchError (409, with currentVersion) and writes nothing.
+const p = await app.projects.get(project.id);
+try {
+  await app.projects.update(p.id, { settings: { designing: { device: 'phone' } } }, { expectedVersion: p.version });
+} catch (e) {
+  if (e instanceof VersionMismatchError) showDesignedElsewhere(e.currentVersion); else throw e;
+}
+await app.projects.update(p.id, { settings: { designing: null } });  // release it (unconditional, as before)
+
 // A conversation with one of the App's agents. A project has one: starting again picks it up.
 const chat = await app.chat.start({ agentId: DESIGNER_AGENT, projectId: project.id });
 const reply = await chat.send('A walnut side table, 50cm square, with a lower shelf', {
