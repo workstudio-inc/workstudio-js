@@ -135,7 +135,7 @@ export type { Contact, ContactInvite, EventFieldValue, EventSendOptions, Notific
 export { Push, routeOf } from './push';
 export type { PushData, PushDevice, PushPlatform, PushPreferences, PushTransport, RegisterOptions } from './push';
 export { Inbox, Requests } from './requests';
-export type { ListingRequest, NewRequest, NewRequestAttachment, RequestAttachment, RequestListing, RequestListOptions, RequestMessage, RequestParty, RequestRequester, RequestShare, RequestStatus } from './requests';
+export type { ListingRequest, NewRequest, NewRequestAttachment, RequestAttachment, RequestBlock, RequestListing, RequestListOptions, RequestMessage, RequestParty, RequestRequester, RequestShare, RequestStatus } from './requests';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Images, Projects } from './resources';
 export { Shares } from './shares';
 export { SharedProjects } from './sharedProjects';
