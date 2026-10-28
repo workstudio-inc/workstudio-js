@@ -260,6 +260,16 @@ describe('app.requests.inbox (the listing owner)', () => {
     assert.equal(calls[1].url, `${BASE}/inbox/a%23b/block`);
   });
 
+  it('blocks and lift: no request needed; lift is DELETE by the block\'s id, 204 answers undefined', async () => {
+    const block = { id: 'b1', name: 'Mike', blockedAt: '2026-10-27T00:00:00Z' };
+    const { app, calls } = client({ body: [block] }, { status: 204 }, { status: 404, body: { code: 'BLOCK_NOT_FOUND', message: 'You have no such block.' } });
+    assert.deepEqual(await app.requests.inbox.blocks(), [block]);
+    assert.equal(await app.requests.inbox.lift('b/1'), undefined);
+    assertCall(calls[0], 'GET', `${BASE}/blocks`, undefined);
+    assertCall(calls[1], 'DELETE', `${BASE}/blocks/b%2F1`, undefined);
+    await assert.rejects(app.requests.inbox.lift('b9'), e => e instanceof AppError && e.status === 404 && e.code === 'BLOCK_NOT_FOUND');
+  });
+
   it('a share that is not the owner\'s is refused with SHARE_NOT_YOURS', async () => {
     const { app } = client({ status: 400, body: { code: 'SHARE_NOT_YOURS', message: 'That share is not yours.' } });
     await assert.rejects(app.requests.inbox.reply('r1', { body: 'x', shareToken: 'other' }), e => e instanceof AppError && e.status === 400 && e.code === 'SHARE_NOT_YOURS');

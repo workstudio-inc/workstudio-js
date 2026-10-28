@@ -130,6 +130,16 @@ export interface NewRequest<T = Record<string, unknown>> {
   attachments?: NewRequestAttachment[];
 }
 
+/**
+ * One of the owner's blocks ({@link Inbox.blocks}): the block's own id - never the blocked person's -
+ * the name they last gave on a request still between the two (null when none is left), and when.
+ */
+export interface RequestBlock {
+  id: string;
+  name: string | null;
+  blockedAt: string;
+}
+
 export interface RequestListOptions {
   status?: RequestStatus;
   limit?: number;
@@ -139,7 +149,8 @@ export interface RequestListOptions {
  * The listing owner's side of requests: what people sent to their listings.
  *
  * {@link list}, {@link get}, {@link reply} (with a guest share, e.g. a priced proposal),
- * {@link decline}, {@link close}, {@link block} and {@link unblock}.
+ * {@link decline}, {@link close}, {@link block} and {@link unblock}; and, with no request needed,
+ * {@link blocks} and {@link lift}.
  */
 export class Inbox {
   constructor(private readonly http: Http) {}
@@ -178,6 +189,16 @@ export class Inbox {
 
   unblock<T = Record<string, unknown>>(id: string): Promise<ListingRequest<T>> {
     return this.http.request('DELETE', this.url(`/${encodeURIComponent(id)}/block`));
+  }
+
+  /** The people the owner blocked in this App, newest first - liftable even once their requests are gone. */
+  blocks(): Promise<RequestBlock[]> {
+    return this.http.request('GET', this.http.api('/connection/end-users/me/blocks'));
+  }
+
+  /** Lift a block by its id from {@link blocks}; resolves with nothing (204). Another's is a 404 `BLOCK_NOT_FOUND`. */
+  lift(blockId: string): Promise<void> {
+    return this.http.request('DELETE', this.http.api(`/connection/end-users/me/blocks/${encodeURIComponent(blockId)}`));
   }
 
   private url(rest = ''): string {
