@@ -274,6 +274,18 @@ await app.chat.rename(chat.id, 'Side table');
 // ended in an error was never counted (TurnFailed.notCharged).
 if (!usable(reply) && reply.turnRef) await chat.waive(reply.turnRef, 'no proposals');
 
+// After a page reload (0.13.0): find the running turn, and pick it up - nothing kept from before the reload.
+const again = await app.chat.start({ agentId: DESIGNER_AGENT, projectId: project.id }); // the same conversation
+if (await app.chat.isRunning(again)) showDesigning();          // on any server; false ~90 s after a server dies
+const outcome = await app.chat.reconnect(again, { onText: piece => render(piece) });
+// Streams the rest of a running turn (first what it said before the reload), or ends at once if it already
+// ended. When another server runs the turn the SDK asks again every few seconds until it ends. Never re-sends.
+// outcome: null (no turn), or { status: 'completed', text } | { status: 'failed', code: 'MODEL_TIMEOUT', ... }
+//   | { status: 'cancelled' } | { status: 'interrupted', code: 'TURN_LOST' },
+//   with turnRef, chargedUsd, refunded, refundPending and notCharged - say "nothing was charged" only when true.
+await app.chat.turn(again);                // the latest turn's outcome (with its answer)
+await app.chat.turn(again, outcome.turnId); // one turn's outcome by id, kept 7 days
+
 // Records in a collection the App declares - only this person's
 const designs = app.data.collection<{ title: string; status: string }>('crava_designs');
 const saved = await designs.create({ title: 'Side table', status: 'draft' });
