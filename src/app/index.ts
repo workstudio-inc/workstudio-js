@@ -133,6 +133,7 @@ export type { Listing, ListingCard, ListingContact, ListingInput, ListingLocatio
 export { Contacts, Events, Notifications } from './notify';
 export type { Contact, ContactInvite, EventFieldValue, EventSendOptions, NotificationEvent, NotificationSettings, Scheduled, Sent } from './notify';
 export { Push, routeOf } from './push';
+export { NotAMember } from './errors';
 export type { PushData, PushDevice, PushPlatform, PushPreferences, PushTransport, RegisterOptions } from './push';
 export { Inbox, Requests } from './requests';
 export type { ListingRequest, NewRequest, RequestListing, RequestListOptions, RequestMessage, RequestParty, RequestRequester, RequestShare, RequestStatus } from './requests';
@@ -142,4 +143,3 @@ export { SharedProjects } from './sharedProjects';
 export type { NewProjectRevision, ProjectApproval, ProjectChangeRequest, ProjectChannel, ProjectContact, ProjectEntriesOptions, ProjectEntry, ProjectEntryType, ProjectParticipant, ProjectPrice, ProjectRevision, ProjectRevisionMeta, ProjectSide, ProjectStatus, SharedProject, SharedProjectListOptions, SharedProjectSummary } from './sharedProjects';
 export type { GuestShare, NewShare, Share, ShareComment, ShareDecision } from './shares';
 export type { Allowance, ContentFacet, ContentItem, ContentPack, ContentPage, ContentPageOptions, DataRecord, FindOptions, Me, Picture, PictureOptions, Project, ProjectInput, PublishedContentItem, StoredFile } from './resources';
-export { NotAMember } from './errors';
