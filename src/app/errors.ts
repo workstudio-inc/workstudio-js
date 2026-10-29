@@ -73,30 +73,50 @@ export class AiPaused extends AppError {
   readonly resetAt?: string;
   /** The person's plan, when the platform said it. */
   readonly plan?: string;
+  /**
+   * True for "Temporarily unavailable. Try again in a minute." (code `APP_AI_PAUSED`, no `scope`, `resetAt` a minute
+   * away): what the person may spend could not be counted just now, or they already have the most requests running at
+   * once, or another conversation's turn of the same design run is running. Not a limit - send it again after
+   * `retryAfterSeconds`; never show a paywall for it. False for a real pause, which lasts until `resetAt`.
+   */
+  readonly retryable: boolean;
+  /** How long to wait before sending it again, in seconds, when the platform said it. */
+  readonly retryAfterSeconds?: number;
 
-  constructor(init: { reason: AiPausedReason; scope?: 'day' | 'month'; resetAt?: string; plan?: string; message?: string }) {
+  constructor(init: { reason: AiPausedReason; scope?: 'day' | 'month'; resetAt?: string; plan?: string; message?: string;
+    retryable?: boolean; retryAfterSeconds?: number }) {
     super(429, init.message || 'AI is paused in this app for now.', init.reason === 'pool' ? 'APP_FREE_POOL_PAUSED' : 'APP_AI_PAUSED');
     this.name = 'AiPaused';
     this.reason = init.reason;
     this.scope = init.scope;
     this.resetAt = init.resetAt;
     this.plan = init.plan;
+    this.retryable = init.retryable === true;
+    this.retryAfterSeconds = init.retryAfterSeconds;
     Object.setPrototypeOf(this, AiPaused.prototype);
   }
 
   /** The pause a refusal carries - an error event's or an HTTP answer's fields - or null when it is not one. */
-  static from(fields: Record<string, unknown> | undefined | null, message?: string): AiPaused | null {
+  static from(raw: Record<string, unknown> | undefined | null, message?: string): AiPaused | null {
+    const fields = refusalFields(raw, message);
     if (!fields) return null;
     const code = String(fields.errorCode ?? fields.code ?? '');
     const text = typeof fields.message === 'string' ? fields.message : typeof fields.error === 'string' ? fields.error : message;
     if (code === 'APP_FREE_POOL_PAUSED' || code === 'APP_AI_PAUSED') {
       const scope = fields.scope === 'day' || fields.scope === 'month' ? fields.scope : undefined;
+      // Said by the platform (an error event, an HTTP refusal); else, from a tag only, the "temporarily unavailable" one.
+      const retryable = typeof fields.retryable === 'boolean' ? fields.retryable
+        : code === 'APP_AI_PAUSED' && !scope && typeof text === 'string' && /^Temporarily unavailable/i.test(text);
+      const wait = typeof fields.retryAfterSeconds === 'number' && Number.isFinite(fields.retryAfterSeconds) && fields.retryAfterSeconds >= 0
+        ? fields.retryAfterSeconds : undefined;
       return new AiPaused({
         reason: code === 'APP_FREE_POOL_PAUSED' ? 'pool' : 'app_budget',
         scope,
         resetAt: typeof fields.resetAt === 'string' ? fields.resetAt : undefined,
         plan: typeof fields.plan === 'string' ? fields.plan : undefined,
         message: text,
+        retryable,
+        retryAfterSeconds: wait,
       });
     }
     // A platform from before the structured pause said the App's budget was used up in words only.
@@ -140,7 +160,8 @@ export class CreditsUsedUp extends AppError {
   }
 
   /** The refusal a stream error event or an HTTP answer carries, or null when it is not one. */
-  static from(fields: Record<string, unknown> | undefined | null, message?: string): CreditsUsedUp | null {
+  static from(raw: Record<string, unknown> | undefined | null, message?: string): CreditsUsedUp | null {
+    const fields = refusalFields(raw, message);
     if (!fields) return null;
     const code = String(fields.errorCode ?? fields.code ?? '');
     if (code !== 'CREDITS_USED_UP') return null;
@@ -162,4 +183,140 @@ export class NotForYourPlan extends AppError {
     this.name = 'NotForYourPlan';
     Object.setPrototypeOf(this, NotForYourPlan.prototype);
   }
+}
+
+/** The design-run refusals (`DESIGN_*`): a design run's id that may not be used as asked. */
+export type DesignRunCode =
+  | 'DESIGN_HOLDS_BUSY'
+  | 'DESIGN_RUN_NOT_YOURS'
+  | 'DESIGN_RUN_CLOSED'
+  | 'DESIGN_RUN_FIX_LIMIT'
+  | 'DESIGN_RUN_EXPIRED'
+  | 'DESIGN_RUN_INVALID';
+
+/** Every {@link DesignRunCode}. */
+export const DESIGN_RUN_CODES: readonly DesignRunCode[] = Object.freeze([
+  'DESIGN_HOLDS_BUSY',
+  'DESIGN_RUN_NOT_YOURS',
+  'DESIGN_RUN_CLOSED',
+  'DESIGN_RUN_FIX_LIMIT',
+  'DESIGN_RUN_EXPIRED',
+  'DESIGN_RUN_INVALID',
+] as const);
+
+const DESIGN_RUN_WORDS: Record<DesignRunCode, string> = {
+  DESIGN_HOLDS_BUSY: 'You already have designs in progress. Finish one, then start this one.',
+  DESIGN_RUN_NOT_YOURS: 'This design can’t be continued. Start a new design.',
+  DESIGN_RUN_CLOSED: 'This design is finished. Start a new design to keep going.',
+  DESIGN_RUN_FIX_LIMIT: 'This design has had all its fixes.',
+  DESIGN_RUN_EXPIRED: 'This design was left too long and has ended. Start a new design.',
+  DESIGN_RUN_INVALID: 'This design can’t be started.',
+};
+
+/** True for a {@link DesignRunCode}. */
+export function isDesignRunCode(code: unknown): code is DesignRunCode {
+  return typeof code === 'string' && (DESIGN_RUN_CODES as readonly string[]).includes(code);
+}
+
+/**
+ * A chat turn (or `credits.designRuns`) named a design run that may not be used as asked - never a limit on the
+ * person's credits (that is {@link CreditsUsedUp}), nor a pause ({@link AiPaused}). Not retryable as it is. By `code`:
+ *
+ * - `DESIGN_HOLDS_BUSY`: the person already has the most design runs open at once (2 by default). "Finish or close a
+ *   design first"; close runs the App abandoned (`credits.designRuns.close`).
+ * - `DESIGN_RUN_NOT_YOURS`: the id belongs to another person, App or tenant. Start a new run with a fresh id.
+ * - `DESIGN_RUN_CLOSED`: the run was closed, by the App or because it finished. Ids are never reopened: start a new run.
+ * - `DESIGN_RUN_FIX_LIMIT`: the run has had round 0 and all its fix turns. Keep the last checked design.
+ * - `DESIGN_RUN_EXPIRED`: the run passed its time limit (45 min by default) and its hold was released. Keep the last
+ *   checked design, or start a new run.
+ * - `DESIGN_RUN_INVALID`: the id is not 8-64 of `[A-Za-z0-9_-]` - a bug in the App; send a UUID. The SDK refuses such an
+ *   id itself, before sending anything.
+ */
+export class DesignRunRefused extends AppError {
+  declare readonly code: DesignRunCode;
+  readonly reason = 'design_run' as const;
+  readonly retryable = false as const;
+
+  constructor(code: DesignRunCode, init: { status?: number; message?: string; details?: Record<string, unknown> } = {}) {
+    super(init.status ?? designRunStatus(code), init.message || DESIGN_RUN_WORDS[code], code, init.details);
+    this.name = 'DesignRunRefused';
+    Object.setPrototypeOf(this, DesignRunRefused.prototype);
+  }
+
+  /** The design-run refusal a stream error event or an HTTP answer carries, or null when it is not one. */
+  static from(raw: Record<string, unknown> | undefined | null, message?: string, status?: number): DesignRunRefused | null {
+    const fields = refusalFields(raw, message);
+    if (!fields) return null;
+    const code = fields.errorCode ?? fields.code;
+    if (!isDesignRunCode(code)) return null;
+    const text = typeof fields.message === 'string' ? fields.message : typeof fields.error === 'string' ? fields.error : message;
+    return new DesignRunRefused(code, { status: status && status >= 400 ? status : undefined, message: text, details: raw ?? undefined });
+  }
+}
+
+/**
+ * The HTTP status the platform gives a design-run refusal (a turn refused before its stream, the design-run endpoints):
+ * 400 invalid, 403 not yours, 429 holds busy, 409 closed / expired / fix limit. On a stream (no status), the same by code.
+ */
+function designRunStatus(code: DesignRunCode): number {
+  return code === 'DESIGN_RUN_INVALID' ? 400 : code === 'DESIGN_RUN_NOT_YOURS' ? 403 : code === 'DESIGN_HOLDS_BUSY' ? 429 : 409;
+}
+
+const TAG = /\s*\[ws:(APP_FREE_POOL_PAUSED|APP_AI_PAUSED|CREDITS_USED_UP|DAILY_LIMIT|DESIGN_[A-Z_]+)((?:;[a-zA-Z]+=[^;\]]*)*)\]/;
+
+/**
+ * A refusal's fields, with what a `[ws:CODE;scope=..;resetAt=..;plan=..]` tag in its words says. The platform puts the
+ * tag on a refusal raised inside the agent loop, and a path that only passes the words on (a generic error event, a
+ * wrapper's "LLM call failed: ...") still carries it. The tag is the more exact: its code wins over the event's own, and
+ * the words come back without the tag and without a wrapper's text before them.
+ */
+export function refusalFields(raw: Record<string, unknown> | undefined | null, message?: string): Record<string, unknown> | null {
+  if (!raw) return null;
+  const fields: Record<string, unknown> = { ...raw };
+  for (const key of ['message', 'error'] as const) {
+    const text = typeof fields[key] === 'string' ? (fields[key] as string) : key === 'message' ? message : undefined;
+    const tag = text ? tagIn(text) : null;
+    if (!tag) continue;
+    fields.code = tag.code;
+    delete fields.errorCode;
+    for (const k of ['scope', 'resetAt', 'plan'] as const) if (tag[k] !== undefined) fields[k] = tag[k];
+    fields.message = tag.message;
+    if (typeof fields.error === 'string') fields.error = tag.message;
+    break;
+  }
+  return fields;
+}
+
+/** What a `[ws:...]` tag in a text says, or null when it has none. */
+export function tagIn(text: string): { code: string; scope?: string; resetAt?: string; plan?: string; message: string } | null {
+  const m = TAG.exec(text);
+  if (!m) return null;
+  const out: { code: string; scope?: string; resetAt?: string; plan?: string; message: string } = { code: m[1]!, message: '' };
+  for (const pair of (m[2] ?? '').split(';')) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) continue;
+    const k = pair.slice(0, eq).toLowerCase();
+    const v = pair.slice(eq + 1).trim();
+    if (!v) continue;
+    if (k === 'scope') out.scope = v;
+    else if (k === 'resetat') out.resetAt = v;
+    else if (k === 'plan') out.plan = v;
+  }
+  const before = text.slice(0, m.index);
+  const cut = before.lastIndexOf(': ');
+  out.message = (cut >= 0 ? before.slice(cut + 2) : before).trim();
+  if (!out.message) {
+    out.message = isDesignRunCode(out.code) ? DESIGN_RUN_WORDS[out.code]
+      : out.code === 'CREDITS_USED_UP' ? 'You’ve used your credits for now.' : 'AI is paused in this app for now.';
+  }
+  return out;
+}
+
+/**
+ * The typed refusal a stream error event or an HTTP answer carries - {@link CreditsUsedUp}, {@link DesignRunRefused} or
+ * {@link AiPaused} - or null when it is none of them. `message` is the words to use when the fields have none.
+ */
+export function refusalOf(raw: Record<string, unknown> | undefined | null, message?: string, status?: number):
+  CreditsUsedUp | DesignRunRefused | AiPaused | null {
+  return CreditsUsedUp.from(raw, message) ?? DesignRunRefused.from(raw, message, status) ?? AiPaused.from(raw, message);
 }

@@ -336,9 +336,10 @@ await app.account.delete();
 - **Servers** acting for a signed-in person: pass `platformToken: () => token` instead of the sign-in
   settings.
 - **Errors**: `SignInRequired` (sign in again), `AllowanceUsed` (this month's AI allowance is spent),
-  `AiPaused` (AI is paused in the App for everyone on the person's plan, or for everyone - see below),
-  `TurnFailed` (an answer that ended in an error; `notCharged` says it was not counted against the
-  allowance), and `AppError` with `status` and a `message` fit to show.
+  `AiPaused` (AI is paused in the App for everyone on the person's plan, or for everyone - see below;
+  `retryable: true` is "temporarily unavailable", try again in a minute), `CreditsUsedUp` and
+  `DesignRunRefused` (see Credits), `TurnFailed` (an answer that ended in an error; `notCharged` says it
+  was not counted against the allowance), and `AppError` with `status` and a `message` fit to show.
 - **Staying signed in**: the SDK refreshes the platform token itself, one refresh at a time across
   every tab of the App (Web Locks, else a localStorage lock). Being offline, or the sign-in service
   being busy or down, never signs the person out: the refresh is retried, the token held is used while
@@ -583,6 +584,10 @@ if (ai.paused && ai.reason !== 'allowance') showPaused(new Date(ai.resetAt!));  
   `AllowanceUsed`).
 - A request refused anyway throws `AiPaused` with the same `reason`, `scope`, `resetAt` and `plan`
   (codes `APP_FREE_POOL_PAUSED`, `APP_AI_PAUSED`); `status()` then answers paused at once.
+- `AiPaused.retryable` is true for "Temporarily unavailable. Try again in a minute." (code `APP_AI_PAUSED`, no
+  `scope`, `resetAt` a minute away, `retryAfterSeconds`): what the person may spend could not be counted just now,
+  they already have the most requests running, or another conversation's turn of the same design run is running.
+  Not a limit: send it again after `retryAfterSeconds`, never show a paywall. A real pause has `retryable: false`.
 - It fails open: signed out, offline, slow, or a platform without the check answers
   `{ paused: false, known: false }`.
 - A turn already running when the pool runs out is let finish, and so are up to two follow-up turns of
@@ -607,9 +612,50 @@ const { entries } = await app.credits.history();     // "Bought 450", "Used 37"
 - An action starts only when enough credits are left, then runs to its end. Refused, it throws
   `CreditsUsedUp` (code `CREDITS_USED_UP`, `scope` `month` or `once`, `resetAt`); `ai.status()` answers
   `reason: 'credits'`. Show it as "out of credits", never as an error.
+- A typed refusal is recognised from the HTTP answer, from the turn's stream `error` event, and from the
+  platform's `[ws:CODE;...]` tag when only the words reach the App - so an App never matches strings.
 - Buying is web-only for now (`buy(..., { platform: 'ios' })` throws `IN_APP_NOT_YET`); `NotForYourPlan`
   when the person's plan does not sell packs. `account.deletionCheck()` carries `credits.bought`, which
   deleting the account removes.
+
+#### Design runs: a design's fix rounds, held for together
+
+A design is round 0 and a few fix rounds, each its own chat turn. Naming one `designRun` on all of them holds the
+credits the whole design needs when it starts, so credits running out after round 0 do not stop the fix rounds half
+way. Nothing is free: each turn is still charged what it costs; a design that cannot afford its hold is refused up
+front (`CreditsUsedUp`).
+
+```ts
+const run = { id: crypto.randomUUID(), fixTurns: 3 };          // fixTurns: 0-10, default 3; read when the run opens
+await chat.send(prompt, { designRun: run });                    // round 0 opens the run and holds (1 + 3) turns
+await chat.send(fixPrompt, { designRun: run });                 // fix rounds run on the hold
+await app.credits.designRuns.get(run.id);
+// { runId, state: 'open' | 'closed' | 'expired', heldCredits, turns, maxTurns, turnsLeft, expiresAt } | null
+await app.credits.designRuns.close(run.id);                     // done or abandoned: 'closed' | 'not_found'
+```
+
+- The id is the App's own: a UUID, or 8-64 of `[A-Za-z0-9_-]` (`isDesignRunId`). A bad id or `fixTurns` throws
+  `DesignRunRefused` `DESIGN_RUN_INVALID` before anything is sent.
+- A run ends when the App closes it, after its last allowed turn, or 45 minutes after it opened; what is left of
+  its hold is released. Ids are never reopened. Close runs the App abandons.
+- Refusals throw `DesignRunRefused` (`reason: 'design_run'`, `retryable: false`), its `code` one of
+  `DESIGN_RUN_CODES` - on the stream, or before it for a run already known bad, with the platform's `status`
+  (400 invalid, 403 not yours, 409 closed / expired / fix limit; 429 holds busy):
+
+| `code` | When | The App should |
+|---|---|---|
+| `DESIGN_HOLDS_BUSY` | The person already has the most runs open (2) | "Finish or close a design first"; close abandoned runs |
+| `DESIGN_RUN_NOT_YOURS` | The id is another person's, App's or tenant's | Start a new run with a fresh id |
+| `DESIGN_RUN_CLOSED` | Closed by the App, or it finished | Start a new run |
+| `DESIGN_RUN_FIX_LIMIT` | Round 0 and all its fix turns are used | Keep the last checked design |
+| `DESIGN_RUN_EXPIRED` | Past its 45 minutes; its hold was released | Keep the last checked design, or start a new run |
+| `DESIGN_RUN_INVALID` | The id is not 8-64 of `[A-Za-z0-9_-]` | A bug in the App: send a UUID |
+
+- `CreditsUsedUp` when the hold does not fit at open, or a fix turn is past its hold with nothing left;
+  `AiPaused` with `retryable: true` when another conversation's turn of the same run is running, or the
+  platform cannot answer just now.
+- Older platforms ignore `designRunId`/`designFixTurns` (each turn is admitted on its own, as before) and never
+  send these refusals; `designRuns.get` answers null and `close` `'not_found'` there.
 
 ### Invites
 
