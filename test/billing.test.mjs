@@ -55,7 +55,7 @@ test('plan() exposes the trial fields', async () => {
   assert.equal(plan.plans[1].trialAvailable, false);
 });
 
-test('plan() carries the monthly AI limit as enforced: the platform default, and the publisher's unlimited', async () => {
+test('plan() carries the monthly AI limit as enforced: the platform default, and the publisher unlimited', async () => {
   const flat = { enabled: false, plan: null, name: null, paid: false, status: null, renewsAt: null, endsAt: null,
     cancelAtPeriodEnd: false, canUpgrade: false, canManage: false, defaultPlan: null, plans: [], features: [] };
   const byDefault = await appWith({ ...flat, monthlyBudgetUsd: 5, monthlyBudgetSource: 'PLATFORM_DEFAULT', unlimited: false })
