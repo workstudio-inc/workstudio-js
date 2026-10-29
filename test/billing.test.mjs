@@ -54,3 +54,21 @@ test('plan() exposes the trial fields', async () => {
   assert.equal(plan.plans[1].trialDays, 14);
   assert.equal(plan.plans[1].trialAvailable, false);
 });
+
+test('plan() carries the monthly AI limit as enforced: the platform default, and the publisher's unlimited', async () => {
+  const flat = { enabled: false, plan: null, name: null, paid: false, status: null, renewsAt: null, endsAt: null,
+    cancelAtPeriodEnd: false, canUpgrade: false, canManage: false, defaultPlan: null, plans: [], features: [] };
+  const byDefault = await appWith({ ...flat, monthlyBudgetUsd: 5, monthlyBudgetSource: 'PLATFORM_DEFAULT', unlimited: false })
+    .app.billing.plan();
+  assert.equal(byDefault.monthlyBudgetUsd, 5);
+  assert.equal(byDefault.monthlyBudgetSource, 'PLATFORM_DEFAULT');
+  assert.equal(byDefault.unlimited, false);
+  const none = await appWith({ ...flat, monthlyBudgetUsd: null, monthlyBudgetSource: 'UNLIMITED', unlimited: true })
+    .app.billing.plan();
+  assert.equal(none.monthlyBudgetUsd, null);
+  assert.equal(none.unlimited, true);
+  // An older server says neither: the fields are simply absent.
+  const older = await appWith({ ...flat, monthlyBudgetUsd: 7 }).app.billing.plan();
+  assert.equal(older.monthlyBudgetSource, undefined);
+  assert.equal(older.unlimited, undefined);
+});

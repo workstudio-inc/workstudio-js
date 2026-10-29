@@ -19,7 +19,10 @@ export interface Me {
 /** This month's AI allowance in the App. */
 export interface Allowance {
   usedUsd: number;
-  /** Null when the App sets no monthly allowance. */
+  /**
+   * The monthly limit the person is held to: their plan's, else the App's per-person cap, else the platform's default
+   * ($5 a month). Null only when no limit applies (the publisher chose unlimited).
+   */
   monthlyBudgetUsd: number | null;
   /** The day it starts again, e.g. `2026-11-01`. */
   resetsOn: string;

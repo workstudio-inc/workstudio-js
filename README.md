@@ -348,7 +348,9 @@ await app.account.delete();
   (`SignInRequired`).
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
-  an App version is approved), the monthly AI allowance per person, sign-in methods and branding.
+  an App version is approved), the monthly AI allowance per person (with none set, the platform's default of $5 a
+  month; `billing.plan()` says the limit in force in `monthlyBudgetUsd`, where it comes from in
+  `monthlyBudgetSource`, and `unlimited: true` when the publisher chose no limit), sign-in methods and branding.
 
 ### Seeing the requests (debug)
 
