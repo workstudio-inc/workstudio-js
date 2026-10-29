@@ -142,6 +142,6 @@ export { Shares } from './shares';
 export { SharedProjects } from './sharedProjects';
 export type { NewProjectRevision, ProjectApproval, ProjectChangeRequest, ProjectChannel, ProjectContact, ProjectEntriesOptions, ProjectEntry, ProjectEntryType, ProjectParticipant, ProjectPrice, ProjectRevision, ProjectRevisionMeta, ProjectSide, ProjectStatus, SharedProject, SharedProjectListOptions, SharedProjectSummary } from './sharedProjects';
 export type { GuestShare, NewShare, Share, ShareComment, ShareDecision } from './shares';
-export type { Allowance, ContentFacet, ContentItem, ContentPack, ContentPage, ContentPageOptions, DataRecord, FindOptions, Me, Picture, PictureOptions, Project, ProjectInput, PublishedContentItem, StoredFile } from './resources';
+export type { Allowance, ContentFacet, ContentItem, ContentPack, ContentPage, ContentPageOptions, DataRecord, FindOptions, Me, Picture, PictureOptions, Project, ProjectInput, ProjectListItem, PublishedContentItem, StoredFile } from './resources';
 export { describeRequest } from './debug';
 export type { DebugOption, RequestLog } from './debug';
