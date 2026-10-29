@@ -65,6 +65,26 @@ export class Http {
     return this.send<T>(url, init, true);
   }
 
+  /**
+   * Open an event stream as the signed-in person (`Accept: text/event-stream`). The response is handed back as it
+   * is, for the caller to read; a refused sign-in throws `SignInRequired` as `request` does.
+   */
+  async stream(url: string, signal?: AbortSignal): Promise<Response> {
+    const token = await this.auth.token();
+    let res: Response;
+    try {
+      res = await this.config.fetch(url, { method: 'GET', headers: { Accept: 'text/event-stream', Authorization: `Bearer ${token}` }, signal });
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      throw new AppError(0, 'Could not reach the service. Check the connection and try again.', 'NETWORK');
+    }
+    if (res.status === 401) {
+      await this.auth.refused();
+      throw new SignInRequired('Your sign-in has expired. Please sign in again.');
+    }
+    return res;
+  }
+
   private async send<T>(url: string, init: RequestInit, asSomeone: boolean): Promise<T> {
     let res: Response;
     try {

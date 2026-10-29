@@ -261,6 +261,17 @@ if (!(await app.auth.signedIn())) await app.auth.signIn({ method: 'google' });
 // Their own projects
 const project = await app.projects.create({ name: 'Kitchen side table' });
 
+// Settings merge key by key; a key set to null is removed. Every read carries `version` (0.13.0): pass it back as
+// expectedVersion to write only if nobody else has since - here, one device claims a running design, and another
+// device that read the same version gets VersionMismatchError (409, with currentVersion) and writes nothing.
+const p = await app.projects.get(project.id);
+try {
+  await app.projects.update(p.id, { settings: { designing: { device: 'phone' } } }, { expectedVersion: p.version });
+} catch (e) {
+  if (e instanceof VersionMismatchError) showDesignedElsewhere(e.currentVersion); else throw e;
+}
+await app.projects.update(p.id, { settings: { designing: null } });  // release it (unconditional, as before)
+
 // A conversation with one of the App's agents. A project has one: starting again picks it up.
 const chat = await app.chat.start({ agentId: DESIGNER_AGENT, projectId: project.id });
 const reply = await chat.send('A walnut side table, 50cm square, with a lower shelf', {
@@ -273,6 +284,19 @@ await app.chat.rename(chat.id, 'Side table');
 // that turn cost. Once per turn, within 10 minutes, a limited number of times a month. A turn that
 // ended in an error was never counted (TurnFailed.notCharged).
 if (!usable(reply) && reply.turnRef) await chat.waive(reply.turnRef, 'no proposals');
+
+// After a page reload (0.13.0): find the running turn, and pick it up - nothing kept from before the reload.
+const again = await app.chat.start({ agentId: DESIGNER_AGENT, projectId: project.id }); // the same conversation
+if (await app.chat.isRunning(again)) showDesigning();          // on any server; false ~90 s after a server dies
+const outcome = await app.chat.reconnect(again, { onText: piece => render(piece) });
+// Streams the rest of a running turn (first what it said before the reload), or ends at once if it already
+// ended. When another server runs the turn the SDK asks again every few seconds until it ends. Never re-sends.
+// outcome: null (no turn), or { status: 'completed', text } | { status: 'failed', code: 'MODEL_TIMEOUT', ... }
+//   | { status: 'cancelled' } | { status: 'interrupted', code: 'TURN_LOST' },
+//   with turnRef, chargedUsd, refunded, refundPending and notCharged - say "nothing was charged" only when true.
+await app.chat.turn(again);                // the latest turn's outcome (with its answer)
+await app.chat.turn(again, outcome.turnId); // one turn's outcome by id, kept 7 days
+await app.chat.stop(again);                // Stop, on whichever server runs it: 'stopped' | 'stopping' | 'not_running'
 
 // Records in a collection the App declares - only this person's
 const designs = app.data.collection<{ title: string; status: string }>('crava_designs');
@@ -324,6 +348,24 @@ await app.account.delete();
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
   an App version is approved), the monthly AI allowance per person, sign-in methods and branding.
+
+### Seeing the requests (debug)
+
+When a call fails and the error alone doesn't say why, turn on `debug`. Every request the SDK makes - sign-in, the
+token swap, data, conversations, plans - is then reported once it is answered: method, URL path, status, time, and
+for a refusal the platform's `code`. Headers (the person's token), bodies and the query string are never reported.
+
+```ts
+const app = createApp({ ...settings, debug: true });
+// [workstudio] GET https://api.work.studio/api/v1/workflow/data/collections/notes/records -> 403 (84 ms)
+
+// Or hand each one to your own logger:
+const app2 = createApp({ ...settings, debug: entry => myLog(entry) });   // { method, url, status, code?, ms }
+```
+
+It is also on, with no code change, when `WORKSTUDIO_DEBUG=1` is in the environment (Node, tests) or the page's
+`localStorage` has `workstudio:debug` set to `1` (run `localStorage.setItem('workstudio:debug', '1')` in the browser
+console and reload, on a deployed App too). `debug: false` keeps it off whatever the environment says.
 
 ### Plans: paid tiers for the App's people
 

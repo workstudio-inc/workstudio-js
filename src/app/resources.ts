@@ -1,4 +1,4 @@
-import { AiPaused, AllowanceUsed, AppError, CreditsUsedUp } from './errors';
+import { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, VersionMismatchError } from './errors';
 import type { Http } from './http';
 import type { DeletionCheck } from './store';
 
@@ -77,6 +77,11 @@ export interface Project {
   color?: string;
   status?: string;
   settings?: Record<string, unknown>;
+  /**
+   * Goes up by one on every write (0.13.0). Pass it back as `expectedVersion` to `update` to write only if nobody
+   * else has since. Read-only: sending `version` in the changes does nothing.
+   */
+  version?: number;
   createdAt?: string;
   updatedAt?: string;
   [key: string]: unknown;
@@ -87,8 +92,21 @@ export interface ProjectInput {
   description?: string;
   icon?: string;
   color?: string;
-  /** Anything the App wants to keep on the project. */
+  /**
+   * Anything the App wants to keep on the project. On `update` it is merged key by key: a key you name is replaced,
+   * a key you set to `null` is removed, a key you leave out is kept.
+   */
   settings?: Record<string, unknown>;
+}
+
+/** How {@link Projects.update} writes. */
+export interface ProjectUpdateOptions {
+  /**
+   * Write only if the project is still at this version - the `version` your last `get` (or `update`) returned.
+   * Otherwise it throws {@link VersionMismatchError} with `currentVersion`, and nothing is written. Leave it out to
+   * write whatever the version (as before).
+   */
+  expectedVersion?: number;
 }
 
 /** The person's own projects. Nobody else's are visible. */
@@ -113,8 +131,44 @@ export class Projects {
     return this.http.request<Project>('POST', this.http.api('/tech-projects'), input);
   }
 
-  update(id: string, changes: Partial<ProjectInput>): Promise<Project> {
-    return this.http.request<Project>('PUT', this.http.api(`/tech-projects/${encodeURIComponent(id)}`), changes);
+  /**
+   * Change a project. With `expectedVersion`, a compare-and-set: of two devices writing from the same read, exactly
+   * one succeeds and the other gets {@link VersionMismatchError} - e.g. to claim a running design:
+   *
+   * ```ts
+   * const p = await app.projects.get(id);
+   * if (!p.settings?.designing) {
+   *   try {
+   *     await app.projects.update(id, { settings: { designing: { device } } }, { expectedVersion: p.version });
+   *   } catch (e) {
+   *     if (e instanceof VersionMismatchError) showDesignedElsewhere(); else throw e;
+   *   }
+   * }
+   * ```
+   */
+  async update(id: string, changes: Partial<ProjectInput>, options: ProjectUpdateOptions = {}): Promise<Project> {
+    const { expectedVersion } = options;
+    const headers: Record<string, string> = {};
+    if (expectedVersion !== undefined && expectedVersion !== null) {
+      if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+        throw new TypeError('expectedVersion must be a project version: a whole number of 0 or more.');
+      }
+      headers['If-Match'] = `"${expectedVersion}"`;
+    }
+    try {
+      return await this.http.request<Project>('PUT', this.http.api(`/tech-projects/${encodeURIComponent(id)}`), changes, headers);
+    } catch (e) {
+      if (e instanceof AppError && e.status === 409 && e.code === 'VERSION_MISMATCH') {
+        const current = e.details?.currentVersion;
+        throw new VersionMismatchError({
+          currentVersion: typeof current === 'number' ? current : typeof current === 'string' && /^\d+$/.test(current) ? Number(current) : undefined,
+          expectedVersion: expectedVersion ?? undefined,
+          message: e.message,
+          details: e.details,
+        });
+      }
+      throw e;
+    }
   }
 
   archive(id: string): Promise<Project> {

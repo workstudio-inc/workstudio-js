@@ -17,6 +17,26 @@ export class AppError extends Error {
   }
 }
 
+/**
+ * A conditional write lost (409, code `VERSION_MISMATCH`, 0.13.0): someone changed the project since the version
+ * you passed as `expectedVersion` - another device claimed the running design first, say. Nothing you sent was
+ * written. `currentVersion` is the version it is at now: read it again (`projects.get`) and decide.
+ */
+export class VersionMismatchError extends AppError {
+  /** The project's version now, when the platform said it. */
+  readonly currentVersion?: number;
+  /** The version the write named. */
+  readonly expectedVersion?: number;
+
+  constructor(init: { currentVersion?: number; expectedVersion?: number; message?: string; details?: Record<string, unknown> } = {}) {
+    super(409, init.message || 'Someone else changed this first. Please try again.', 'VERSION_MISMATCH', init.details);
+    this.name = 'VersionMismatchError';
+    this.currentVersion = init.currentVersion;
+    this.expectedVersion = init.expectedVersion;
+    Object.setPrototypeOf(this, VersionMismatchError.prototype);
+  }
+}
+
 /** Nobody is signed in, or their sign-in has lapsed: call `auth.signIn()`. */
 export class SignInRequired extends AppError {
   constructor(message = 'Please sign in.') {
