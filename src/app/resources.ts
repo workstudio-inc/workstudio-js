@@ -532,7 +532,7 @@ export interface StoredFile {
   createdAt?: string;
 }
 
-/** The person's own files: photos and PDFs, under 25 MB each. */
+/** The person's own files: photos and PDFs (JPEG, PNG, WebP, HEIC, HEIF, GIF, PDF), up to 20 MB each. A larger file is refused with 413. */
 export class Files {
   constructor(private readonly http: Http) {}
 
