@@ -90,6 +90,27 @@ export interface Project {
   [key: string]: unknown;
 }
 
+/**
+ * A project as {@link Projects.list} returns it: the summary the platform lists, which carries NO `settings`. A
+ * project's settings have no size limit, so the list leaves them out; read them with {@link Projects.get}.
+ * (`version` and `updatedAt` are here, so a list is enough to tell which projects changed since you last read them.)
+ */
+export interface ProjectListItem {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  status?: string;
+  /** As on {@link Project.version}. */
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  /** Not on a list item: `get(id)` returns the project with its settings. */
+  settings?: never;
+  [key: string]: unknown;
+}
+
 export interface ProjectInput {
   name: string;
   description?: string;
@@ -116,16 +137,22 @@ export interface ProjectUpdateOptions {
 export class Projects {
   constructor(private readonly http: Http) {}
 
-  async list(options: { includeArchived?: boolean; page?: number; size?: number } = {}): Promise<Project[]> {
+  /**
+   * The person's projects, most recently changed first, WITHOUT their settings ({@link ProjectListItem}). To read a
+   * project's settings, `get` it - e.g. only the few changed lately, since every settings write moves a project to
+   * the front of this list.
+   */
+  async list(options: { includeArchived?: boolean; page?: number; size?: number } = {}): Promise<ProjectListItem[]> {
     const q = new URLSearchParams({
       includeArchived: String(options.includeArchived ?? false),
       page: String(options.page ?? 0),
       size: String(options.size ?? 50),
     });
-    const body = await this.http.request<{ content?: Project[] } | Project[]>('GET', this.http.api(`/tech-projects?${q}`));
+    const body = await this.http.request<{ content?: ProjectListItem[] } | ProjectListItem[]>('GET', this.http.api(`/tech-projects?${q}`));
     return Array.isArray(body) ? body : body?.content ?? [];
   }
 
+  /** One project, with its `settings` and `version` - the read to make before a settings write. */
   get(id: string): Promise<Project> {
     return this.http.request<Project>('GET', this.http.api(`/tech-projects/${encodeURIComponent(id)}`));
   }
