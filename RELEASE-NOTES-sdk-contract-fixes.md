@@ -1,9 +1,10 @@
-# @workstudio-inc/sdk - contract fixes (branch `sdk-contract-fixes`, on 0.14.0)
+# @workstudio-inc/sdk 0.15.0 - contract fixes (branch `sdk-contract-fixes`, on 0.14.0)
 
 Every public method of the embed client (`IntegrationsClient`), `@workstudio-inc/sdk/browser` and the App SDK
 (`@workstudio-inc/sdk/app`) was checked against the server code on origin/main (2026-10-30): the route, the request
 body, the response DTO and the credential. Every route exists and accepts the credential the SDK sends. The fixes
-below are about response shapes and request semantics. No version bump was made; this is for the next release.
+below are about response shapes and request semantics. Released as **0.15.0** (2026-10-30); see CHANGELOG.md. b5
+tags `v0.15.0` (runbook internal-docs `runbooks/sdk-release-1030.md`).
 
 "Since" gives the SDK commit that introduced the code, its date, and the first `v*` tag that shipped it. Where the
 server changed later, its commit is given too.
