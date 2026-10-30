@@ -137,7 +137,7 @@ export type { Listing, ListingCard, ListingContact, ListingInput, ListingLocatio
 export { Contacts, Events, Notifications } from './notify';
 export type { Contact, ContactInvite, EventFieldValue, EventSendOptions, NotificationEvent, NotificationSettings, Scheduled, Sent } from './notify';
 export { Push, routeOf } from './push';
-export type { PushData, PushDevice, PushPlatform, PushPreferences, PushTransport, RegisterOptions } from './push';
+export type { PushData, PushDevice, PushPlatform, PushPreferences, PushPreferencesChange, PushTransport, RegisterOptions } from './push';
 export { Inbox, Requests } from './requests';
 export type { ListingRequest, NewRequest, NewRequestAttachment, RequestAttachment, RequestBlock, RequestListing, RequestListOptions, RequestMessage, RequestParty, RequestRequester, RequestShare, RequestStatus } from './requests';
 export { Account, Collection, Content, ContentPackReader, Data, Files, Images, Projects } from './resources';

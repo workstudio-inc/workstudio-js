@@ -108,6 +108,8 @@ export interface PlanOption {
 export interface Plan {
   /** Whether the App sells plans. When false, everyone has the App's one allowance, `monthlyBudgetUsd`. */
   enabled: boolean;
+  /** The price the person pays now, when they pay on the web; null otherwise (connection AppBillingService.PlanView). */
+  price?: PlanPrice | null;
   /** The plan in force, e.g. `free` or `plus`; null when the App sells none. */
   plan: string | null;
   name: string | null;

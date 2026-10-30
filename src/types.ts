@@ -25,8 +25,18 @@ export interface IntegrationSummary {
   logoUrl?: string;
   version?: string;
   tags?: string[];
+  /** Who published it. */
+  publisherName?: string | null;
+  /** Whether the publisher is verified. */
+  publisherVerified?: boolean;
+  /** Set by the SDK from the server's `popular`. */
   isPopular?: boolean;
+  /** Set by the SDK from the server's `new`. */
   isNew?: boolean;
+  /** The field as the server sends it (catalog EmbedCatalogResponse: Lombok `isPopular` serialises as `popular`). */
+  popular?: boolean;
+  /** The field as the server sends it (`isNew` serialises as `new`). */
+  new?: boolean;
   requiresOAuth?: boolean;
   connectorCount: number;
 }
@@ -93,7 +103,10 @@ export interface IntegrationDetail {
   configFields?: ConfigField[];
   features?: string[];
   documentationUrl?: string;
+  /** Set by the SDK from the server's `activated` (catalog EmbedIntegrationDetail: Lombok `isActivated` serialises as `activated`). */
   isActivated: boolean;
+  /** The field as the server sends it. */
+  activated?: boolean;
   activationStatus?: string;
   activationId?: string;
 }
@@ -128,6 +141,8 @@ export interface Activation {
   id: string;
   integrationGlobalId: string;
   integrationName?: string;
+  instanceKey?: string | null;
+  name?: string | null;
   integrationLogoUrl?: string;
   status: ActivationStatus | string;
   pendingRequirements?: PendingRequirement[];
@@ -148,10 +163,24 @@ export interface ActivateOptions {
 
 /** Options for `initiateOAuth`. */
 export interface InitiateOAuthOptions {
-  /** Where the OAuth provider should send the user back to (your embed page). */
+  /**
+   * The origin (`https://app.example.com` - scheme, host, port; no path) the OAuth popup reports its result to with
+   * `postMessage`. It must be on the platform's callback allow-list, or the call is refused (400
+   * `CALLBACK_ORIGIN_NOT_ALLOWED`); leave it out to use the platform's default.
+   */
+  callbackOrigin?: string;
+  /**
+   * @deprecated The platform reads this as the callback origin, never as a redirect: use `callbackOrigin`. A full URL
+   * given here is reduced to its origin (a URL with a path was refused).
+   */
   redirectUri?: string;
-  /** Opaque state passed through the OAuth flow. */
+  /** @deprecated Ignored by the platform: the `state` in the answer is the platform's own. */
   state?: string;
+  /**
+   * For a connector at the customer's own address, e.g. `{ subdomain: 'acme' }` (Zendesk) or
+   * `{ instance: 'dev12345' }` (ServiceNow): required before the redirect for those connectors.
+   */
+  variables?: Record<string, string>;
 }
 
 /** Result of `initiateOAuth`. */
@@ -213,6 +242,8 @@ export interface RegionWidget {
 export interface RegionSkip {
   widgetId: string;
   reason: string;
+  /** The platform's sentence about it, e.g. "Needs deviceId, which this render did not send." */
+  detail?: string;
 }
 
 /** What `IntegrationsClient.listRegionWidgets` returns, whichever shape the server answered in. */
@@ -295,6 +326,11 @@ export interface Connection {
   connectedAt?: string | null;
   /** Names of your Apps that use this connector. */
   usedBy?: string[];
+  connectionId?: string | null;
+  instanceId?: string | null;
+  account?: string | null;
+  accountLabel?: string | null;
+  authScope?: string | null;
 }
 
 /** A customer's AI assistant access. Never carries the key. */
@@ -308,6 +344,9 @@ export interface McpAccess {
   lastUsedAt?: string | null;
   /** The endpoint a key is appended to. */
   endpoint?: string | null;
+  writeEnabled?: boolean;
+  automations?: boolean;
+  serverName?: string | null;
 }
 
 /** The result of `listConnections`. */
@@ -323,4 +362,7 @@ export interface McpUrl {
   endpoint: string;
   keyPrefix: string;
   createdAt?: string;
+  writeEnabled?: boolean;
+  automations?: boolean;
+  serverName?: string | null;
 }

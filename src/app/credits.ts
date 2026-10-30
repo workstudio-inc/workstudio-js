@@ -37,10 +37,13 @@ export interface CreditsOptions {
   maxAgeMs?: number;
 }
 
-/** About how many credits an action uses: `basis` `price` (a picture's price) or `hint` (the App's own figure). */
+/**
+ * About how many credits an action uses: `basis` `price` (a picture's price) or `hint` (the App's own figure).
+ * `credits` is null for `design` when the App gives no hint (ai-runtime EndUserCreditsController.estimate).
+ */
 export interface CreditEstimate {
   action: 'picture' | 'design';
-  credits: number;
+  credits: number | null;
   basis: 'price' | 'hint';
 }
 
@@ -50,13 +53,16 @@ export interface CreditEstimateOptions {
   quality?: string;
 }
 
-/** One credit pack and what sells it here. `web.amount` is in the currency's minor unit. */
+/**
+ * One credit pack and what sells it here. `web.amount` is in the currency's minor unit. A way to buy it that is not
+ * offered here comes as `null` (connection AppCredits.PackOffer).
+ */
 export interface CreditPack {
   id: string;
   credits: number;
-  web?: { priceId: string; amount: number; currency: string };
-  apple?: { productId: string };
-  google?: { productId: string };
+  web?: { priceId: string; amount: number | null; currency: string | null } | null;
+  apple?: { productId: string } | null;
+  google?: { productId: string } | null;
 }
 
 export type CreditPacksWhy = 'NOT_FOR_YOUR_PLAN' | 'PAYMENTS_NOT_SET_UP' | 'IN_APP_NOT_YET' | 'NO_PACKS';

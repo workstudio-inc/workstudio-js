@@ -51,6 +51,28 @@ export interface PushPreferences {
   scopeHash: string;
 }
 
+/** A change to {@link PushPreferences}: what is left out stays as it is. */
+export interface PushPreferencesChange {
+  enabled?: boolean;
+  /** `null` for a kind removes the person's choice for it (it is then on). */
+  categories?: Record<string, boolean | null>;
+  /** Both together, `HH:mm`; both `null` for no quiet hours. */
+  quietStart?: string | null;
+  quietEnd?: string | null;
+  /** `null` for none. */
+  timezone?: string | null;
+}
+
+/**
+ * The body the platform reads (`PreferencesInput`, notification AppPushDevices): an absent or `null` field there means
+ * "unchanged" and `""` means "clear", so a `null` the App passes to clear is sent as `""`.
+ */
+function preferencesBody(changes: PushPreferencesChange): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...changes };
+  for (const k of ['quietStart', 'quietEnd', 'timezone'] as const) if (k in changes && changes[k] === null) body[k] = '';
+  return body;
+}
+
 /** What a push from the App carries besides its title and body (`notification.data`). */
 export interface PushData {
   kind?: string;
@@ -114,9 +136,12 @@ export class Push {
   /** This person's preferences for pushes from this App. */
   readonly preferences = {
     get: (): Promise<PushPreferences> => this.http.request<PushPreferences>('GET', this.url('/preferences')).then(p => this.noted(p)),
-    /** Change some of them; the rest stay. Answers all of them. */
-    set: (changes: Partial<Omit<PushPreferences, 'scopeHash'>>): Promise<PushPreferences> =>
-      this.http.request<PushPreferences>('PUT', this.url('/preferences'), changes).then(p => this.noted(p)),
+    /**
+     * Change some of them; the rest stay. Answers all of them. `null` clears quiet hours (send `quietStart` and
+     * `quietEnd` together) or the time zone; a category set to `null` goes back to its default (on).
+     */
+    set: (changes: PushPreferencesChange): Promise<PushPreferences> =>
+      this.http.request<PushPreferences>('PUT', this.url('/preferences'), preferencesBody(changes)).then(p => this.noted(p)),
   };
 
   /**

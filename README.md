@@ -99,8 +99,12 @@ client.bindConnection(activationId, connectorGlobalId, connectionInstanceId): Pr
 client.disconnectConnection(activationId, connectorGlobalId): Promise<Activation>
 
 // OAuth
-client.initiateOAuth(activationId, connectorGlobalId, { redirectUri?, state? }): Promise<OAuthInitResult>
+client.initiateOAuth(activationId, connectorGlobalId, { callbackOrigin?, variables? }): Promise<OAuthInitResult>
+//   callbackOrigin: a bare origin on the platform's callback allow-list (redirectUri is deprecated: it was always
+//   read as this origin, and a URL with a path was refused). variables: { subdomain } / { instance } for connectors
+//   at the customer's own address.
 client.completeOAuth({ code, state, activationId?, connectorGlobalId?, connectionInstanceId? }): Promise<OAuthCallbackResult>
+//   needs the oauth:complete scope, which Designer-generated keys do not have; after a popup, use bindConnection
 
 // The customer's connections, independent of any App
 client.listConnections(): Promise<ConnectionsList>          // offered connectors + status + MCP access
@@ -144,9 +148,15 @@ import { connectConnector } from '@workstudio-inc/sdk/browser';
 
 async function onConnectClick(activationId: string, connectorGlobalId: string) {
   const updated = await connectConnector(client, activationId, connectorGlobalId);
-  // `updated` is the refreshed activation with the connector now connected
+  // `updated` is the activation with the new connection bound to the connector - or, when no result reached this
+  // page (popup closed, flow failed), the activation as it stands, the connector still in pendingRequirements
 }
 ```
+
+The popup reports its result with `postMessage` (`{ type: 'connectionStatus', payload, connectionInstanceId }`)
+only to the flow's callback origin - `callbackOrigin`, which must be on the platform's allow-list - or the
+platform's default origin. A page on any other origin sees only the popup close; `connectConnector` then returns
+the activation unchanged.
 
 Prefer to drive the flow yourself? Use the primitives:
 
@@ -154,8 +164,10 @@ Prefer to drive the flow yourself? Use the primitives:
 import { openOAuthPopup } from '@workstudio-inc/sdk/browser';
 
 const { authorizationUrl } = await client.initiateOAuth(activationId, connectorGlobalId);
-await openOAuthPopup(authorizationUrl);
-const activation = await client.getActivation(activationId);
+const result = await openOAuthPopup(authorizationUrl);   // the popup's connectionStatus message, or undefined
+const activation = result?.payload === 'success' && typeof result.connectionInstanceId === 'string'
+  ? await client.bindConnection(activationId, connectorGlobalId, result.connectionInstanceId)  // nothing else binds it
+  : await client.getActivation(activationId);
 ```
 
 ---
@@ -280,6 +292,11 @@ const reply = await chat.send('A walnut side table, 50cm square, with a lower sh
 });
 await app.chat.list({ projectId: project.id });
 await app.chat.rename(chat.id, 'Side table');
+// The turns so far: role 'user' / 'assistant' are the messages to show ('tool', 'error', 'system' are the agent's
+// own working); type is the platform's kind (USER_MESSAGE, ASSISTANT_MESSAGE, TOOL_CALL...).
+const turns = (await app.chat.history(chat.id)).filter(t => t.role === 'user' || t.role === 'assistant');
+// A turn the person stopped (chat.stop, here or in another tab) resolves with what streamed so far and
+// reply.cancelled === true.
 // An answer the App cannot use (unparseable, empty, fails its checks): give the person back what
 // that turn cost. Once per turn, within 10 minutes, a limited number of times a month. A turn that
 // ended in an error was never counted (TurnFailed.notCharged).
@@ -549,6 +566,7 @@ async function signOut() {
 
 await app.push.preferences.set({ categories: { proposals: false }, quietStart: '22:00', quietEnd: '07:00',
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+await app.push.preferences.set({ quietStart: null, quietEnd: null }); // no quiet hours (both together); null clears
 await app.push.devices();                 // their registered devices; setEnabled(id, false) silences one
 ```
 
