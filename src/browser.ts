@@ -7,8 +7,20 @@
 import type { IntegrationsClient } from './client.js';
 import type { Activation, InitiateOAuthOptions } from './types.js';
 
-/** postMessage type the connection OAuth popup posts back to the opener on completion. */
+/**
+ * postMessage type a Workstudio embed frame posts to its host when a connection OAuth flow completes. The OAuth popup
+ * itself posts {@link CONNECTION_STATUS_MESSAGE}.
+ */
 export const OAUTH_CALLBACK_MESSAGE = 'svx:integration:oauth:callback';
+
+/**
+ * postMessage type the connection OAuth popup posts to its opener as it closes (connection MultiTenantSuccessHandler):
+ * `{ type: 'connectionStatus', payload: 'success', connectionId, connectionInstanceId }`, or
+ * `{ type: 'connectionStatus', payload: 'error', error }`. It is posted only to the flow's callback origin
+ * (`initiateOAuth`'s `callbackOrigin`, which must be on the platform's allow-list) or the platform's default origin;
+ * a page on any other origin never receives it and sees only the popup close.
+ */
+export const CONNECTION_STATUS_MESSAGE = 'connectionStatus';
 
 export interface OpenOAuthPopupOptions {
   /** Popup window name. Default `svx_oauth`. */
@@ -50,7 +62,11 @@ export function openOAuthPopup(
 
     const onMessage = (event: MessageEvent) => {
       const data = event?.data;
-      if (data && typeof data === 'object' && data.type === OAUTH_CALLBACK_MESSAGE) {
+      if (!data || typeof data !== 'object') return;
+      if (data.type === OAUTH_CALLBACK_MESSAGE) {
+        finish(data as Record<string, unknown>);
+      } else if (data.type === CONNECTION_STATUS_MESSAGE && event.source === popup) {
+        // What the popup itself posts; only from the popup this call opened.
         finish(data as Record<string, unknown>);
       }
     };
@@ -65,8 +81,13 @@ export function openOAuthPopup(
 }
 
 /**
- * One-call connect for a connector: initiate OAuth, open the popup, wait for completion, then
- * return the refreshed activation. Ideal for a "Connect" button.
+ * One-call connect for a connector: initiate OAuth, open the popup, wait for completion, attach the connection the
+ * popup reports to the activation's connector (`bindConnection`), then return the refreshed activation. Ideal for a
+ * "Connect" button.
+ *
+ * When no result reaches this page - the person closed the popup, the flow failed, or this page's origin is not the
+ * flow's callback origin (see {@link CONNECTION_STATUS_MESSAGE}) - it returns the activation as it stands, its
+ * connector still in `pendingRequirements`.
  *
  * @example
  * ```ts
@@ -80,9 +101,16 @@ export async function connectConnector(
   options?: InitiateOAuthOptions & OpenOAuthPopupOptions,
 ): Promise<Activation> {
   const init = await client.initiateOAuth(activationId, connectorGlobalId, {
+    callbackOrigin: options?.callbackOrigin,
     redirectUri: options?.redirectUri,
     state: options?.state,
+    variables: options?.variables,
   });
-  await openOAuthPopup(init.authorizationUrl, options);
+  const result = await openOAuthPopup(init.authorizationUrl, options);
+  const instanceId = result?.connectionInstanceId;
+  if (result && result.payload !== 'error' && typeof instanceId === 'string' && instanceId) {
+    // Nothing on the platform attaches the new connection to the activation: the opener does.
+    return client.bindConnection(activationId, connectorGlobalId, instanceId);
+  }
   return client.getActivation(activationId);
 }

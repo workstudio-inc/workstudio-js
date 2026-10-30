@@ -119,13 +119,26 @@ export class IntegrationsClient {
   // ===========================================================================
 
   /** List the integrations published to the customer, optionally filtered. */
-  listIntegrations(params?: { category?: string; search?: string }): Promise<Catalog> {
-    return this.request<Catalog>('GET', '/catalog', { query: params });
+  async listIntegrations(params?: { category?: string; search?: string }): Promise<Catalog> {
+    const catalog = await this.request<Catalog>('GET', '/catalog', { query: params });
+    if (!catalog || !Array.isArray(catalog.integrations)) return catalog;
+    // The server names these `popular` / `new` (Lombok boolean getters); the SDK has always promised isPopular / isNew.
+    return {
+      ...catalog,
+      integrations: catalog.integrations.map((i) => ({
+        ...i,
+        isPopular: i.isPopular ?? i.popular,
+        isNew: i.isNew ?? i.new,
+      })),
+    };
   }
 
   /** Get full detail for a single integration by global id or slug. */
-  getIntegration(idOrSlug: string): Promise<IntegrationDetail> {
-    return this.request<IntegrationDetail>('GET', `/integrations/${encodeURIComponent(idOrSlug)}`);
+  async getIntegration(idOrSlug: string): Promise<IntegrationDetail> {
+    const detail = await this.request<IntegrationDetail>('GET', `/integrations/${encodeURIComponent(idOrSlug)}`);
+    if (!detail || typeof detail !== 'object') return detail;
+    // The server names it `activated` (a Lombok boolean getter); the SDK has always promised isActivated.
+    return { ...detail, isActivated: detail.isActivated ?? detail.activated ?? false };
   }
 
   // ===========================================================================
@@ -195,16 +208,24 @@ export class IntegrationsClient {
   // OAuth
   // ===========================================================================
 
-  /** Begin an OAuth flow for a connector; returns the provider authorization URL to open. */
+  /**
+   * Begin an OAuth flow for a connector; returns the provider authorization URL to open. When the popup finishes it
+   * posts `{ type: 'connectionStatus', payload: 'success', connectionInstanceId }` to `callbackOrigin` (or the
+   * platform's default origin); bind that instance with {@link bindConnection} - `connectConnector` in
+   * `@workstudio-inc/sdk/browser` does both.
+   */
   initiateOAuth(
     activationId: string,
     connectorGlobalId: string,
     options?: InitiateOAuthOptions,
   ): Promise<OAuthInitResult> {
+    // The server's field is called redirectUri but is used as the popup's callback origin (catalog
+    // IntegrationEmbedService -> connection OAuthInitiationController), which must be a bare origin.
+    const callbackOrigin = options?.callbackOrigin ?? originOf(options?.redirectUri);
     return this.request<OAuthInitResult>(
       'POST',
       `/activations/${encodeURIComponent(activationId)}/oauth/${encodeURIComponent(connectorGlobalId)}/initiate`,
-      { body: { redirectUri: options?.redirectUri, state: options?.state } },
+      { body: { redirectUri: callbackOrigin, state: options?.state, variables: options?.variables } },
     );
   }
 
@@ -212,6 +233,10 @@ export class IntegrationsClient {
    * Complete an OAuth flow (usually called by your redirect handler with the provider's `code`
    * and `state`). When `activationId`/`connectorGlobalId`/`connectionInstanceId` are supplied the
    * server binds the connection and returns the refreshed activation.
+   *
+   * Needs a key (or session token) holding the `oauth:complete` scope, which keys generated in Designer do not
+   * have: without it the answer is 400 "Missing required scope: oauth:complete". To attach the connection a popup
+   * reported, use {@link bindConnection} (`activation:create`).
    */
   completeOAuth(input: CompleteOAuthInput): Promise<OAuthCallbackResult> {
     return this.request<OAuthCallbackResult>('POST', '/oauth/callback', { body: input });
@@ -450,6 +475,17 @@ export class IntegrationsClient {
   }
 }
 
+/** The origin of a URL (`https://host[:port]`), or the value as it is when it is not an absolute http(s) URL. */
+function originOf(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : value;
+  } catch {
+    return value;
+  }
+}
+
 /**
  * Either answer the region render endpoint gives, as one shape. A bare array is a server from before
  * region contracts; it never reports skips or a version. Rows without a frame URL are dropped.
@@ -468,7 +504,11 @@ export function normaliseRegionWidgets(body: unknown): RegionWidgets {
     skipped: Array.isArray(obj.skipped)
       ? obj.skipped
           .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
-          .map((s) => ({ widgetId: String(s.widgetId ?? ''), reason: String(s.reason ?? '') }))
+          .map((s) => ({
+            widgetId: String(s.widgetId ?? ''),
+            reason: String(s.reason ?? ''),
+            ...(typeof s.detail === 'string' ? { detail: s.detail } : {}),
+          }))
       : [],
   };
   if (typeof obj.contractVersion === 'number') result.contractVersion = obj.contractVersion;
