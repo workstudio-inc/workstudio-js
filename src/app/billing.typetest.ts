@@ -1,5 +1,5 @@
 // Compile-time only (npm run typecheck; not exported, not bundled): the trial fields are public types.
-import type { CheckoutLink, CheckoutOptions, Plan, PlanOption } from './billing';
+import type { CheckoutLink, CheckoutOptions, MonthlyBudgetSource, Plan, PlanOption } from './billing';
 import type { InvitePreview, InviteRedemption } from './invites';
 import type { DeletionCheck, ManageTarget, StoreOffer, StorePurchase, StoreRestore } from './store';
 import { manageTarget } from './store';
@@ -57,3 +57,16 @@ export const waiting: Pick<Plan, 'grant' | 'next'> = {
 export const link: CheckoutLink = { url: 'https://checkout.stripe.com/c/pay/cs_1', trialDays: null, firstChargeAt: '2027-01-25T12:00:00Z' };
 // @ts-expect-error - keepsAfterGrant is always said
 export const noKeeps: NonNullable<Plan['grant']> = { planId: 'pro', planName: 'Pro', startsAt: 'x', endsAt: 'y', active: true };
+
+// The monthly AI limit as enforced: the platform default, the publisher's unlimited, and an older server's plan.
+
+export const byDefault: Pick<Plan, 'monthlyBudgetUsd' | 'monthlyBudgetSource' | 'unlimited'> = {
+  monthlyBudgetUsd: 5, monthlyBudgetSource: 'PLATFORM_DEFAULT', unlimited: false,
+};
+export const noCap: Pick<Plan, 'monthlyBudgetUsd' | 'monthlyBudgetSource' | 'unlimited'> = {
+  monthlyBudgetUsd: null, monthlyBudgetSource: 'UNLIMITED', unlimited: true,
+};
+export const olderServer: Pick<Plan, 'monthlyBudgetUsd' | 'monthlyBudgetSource' | 'unlimited'> = { monthlyBudgetUsd: 7 };
+export const sources: MonthlyBudgetSource[] = ['PLAN', 'APP', 'PLATFORM_DEFAULT', 'UNLIMITED', 'NONE'];
+// @ts-expect-error - not a source the server sends
+export const wrongSource: MonthlyBudgetSource = 'DEFAULT';

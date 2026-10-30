@@ -104,17 +104,35 @@ export interface PlanOption {
   trialAvailable?: boolean;
 }
 
+/** Where a person's monthly AI limit comes from ({@link Plan.monthlyBudgetSource}). */
+export type MonthlyBudgetSource = 'PLAN' | 'APP' | 'PLATFORM_DEFAULT' | 'UNLIMITED' | 'NONE';
+
 /** The person's plan in the App, and the App's plans. */
 export interface Plan {
-  /** Whether the App sells plans. When false, everyone has the App's one allowance, `monthlyBudgetUsd`. */
+  /**
+   * Whether the App sells plans. When false, everyone has the App's one allowance, `monthlyBudgetUsd` - its per-person
+   * cap, or the platform default when it sets none.
+   */
   enabled: boolean;
   /** The price the person pays now, when they pay on the web; null otherwise (connection AppBillingService.PlanView). */
   price?: PlanPrice | null;
   /** The plan in force, e.g. `free` or `plus`; null when the App sells none. */
   plan: string | null;
   name: string | null;
-  /** This plan's monthly AI allowance in US dollars; null when there is no limit. */
+  /**
+   * The monthly AI limit the person is held to, in US dollars: their plan's; in an App that sells no plans, the App's
+   * per-person cap, else the platform's default ($5 a month). Null only when no limit applies - `unlimited` is then
+   * true, and `monthlyBudgetSource` says why.
+   */
   monthlyBudgetUsd: number | null;
+  /**
+   * Where `monthlyBudgetUsd` comes from: `PLAN`, `APP` (the publisher's per-person cap), `PLATFORM_DEFAULT`,
+   * `UNLIMITED` (the publisher chose no cap) or `NONE` (the App set none and gets no platform default). Absent from
+   * servers before the platform default.
+   */
+  monthlyBudgetSource?: MonthlyBudgetSource;
+  /** True when no monthly AI limit applies to the person (`monthlyBudgetUsd` is then null). Absent from older servers. */
+  unlimited?: boolean;
   /** Whether it is a paid plan. False on a grant from an invite: nobody is paying. */
   paid: boolean;
   /**

@@ -284,6 +284,11 @@ try {
 }
 await app.projects.update(p.id, { settings: { designing: null } });  // release it (unconditional, as before)
 
+// list() gives summaries WITHOUT settings (settings have no size limit): get() a project to read them. Every
+// settings write moves a project to the front, so the few changed lately are the ones worth reading.
+const recent = (await app.projects.list({ size: 20 })).filter(item => Date.parse(item.updatedAt ?? '') > Date.now() - 3_600_000);
+const marked = (await Promise.all(recent.map(item => app.projects.get(item.id)))).filter(full => full.settings?.designing);
+
 // A conversation with one of the App's agents. A project has one: starting again picks it up.
 const chat = await app.chat.start({ agentId: DESIGNER_AGENT, projectId: project.id });
 const reply = await chat.send('A walnut side table, 50cm square, with a lower shelf', {
@@ -365,7 +370,9 @@ await app.account.delete();
   (`SignInRequired`).
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
-  an App version is approved), the monthly AI allowance per person, sign-in methods and branding.
+  an App version is approved), the monthly AI allowance per person (with none set, the platform's default of $5 a
+  month; `billing.plan()` says the limit in force in `monthlyBudgetUsd`, where it comes from in
+  `monthlyBudgetSource`, and `unlimited: true` when the publisher chose no limit), sign-in methods and branding.
 
 ### Seeing the requests (debug)
 

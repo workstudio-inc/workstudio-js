@@ -35,6 +35,41 @@ describe('projects: version on reads', () => {
   });
 });
 
+describe('projects.list: summaries, without settings', () => {
+  // GET /tech-projects as studio-management sends it: a Spring page of ProjectListItem, which has no settings.
+  const listItem = (id, version) => ({
+    id, name: 'Kitchen side table', description: null, icon: null, color: null, enabledAbilities: [], status: 'ACTIVE',
+    createdAt: '2026-10-27T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z', createdBy: 'eu-1', groupTags: [], conversationCount: 1, version,
+  });
+
+  it('parses the page into items with id, name, version and updatedAt, and no settings', async () => {
+    const { app, calls } = client([{ body: { content: [listItem(ID, 3), listItem('p-2', 0)], totalElements: 2, number: 0, size: 50 } }]);
+    const items = await app.projects.list();
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].url, `${PROJECTS}?includeArchived=false&page=0&size=50`);
+    assert.equal(items.length, 2);
+    assert.deepEqual(items.map(i => [i.id, i.name, i.version, i.updatedAt]), [
+      [ID, 'Kitchen side table', 3, '2026-10-28T10:00:00Z'],
+      ['p-2', 'Kitchen side table', 0, '2026-10-28T10:00:00Z'],
+    ]);
+    for (const item of items) assert.equal('settings' in item, false);
+  });
+
+  it('a bare array is taken as the items too', async () => {
+    const { app } = client([{ body: [listItem(ID, 1)] }]);
+    assert.deepEqual((await app.projects.list()).map(i => i.id), [ID]);
+  });
+
+  it('settings are read with get(id)', async () => {
+    const { app, calls } = client([{ body: { content: [listItem(ID, 3)] } }, { body: project(3, { app: 'crava', designing: { device: 'phone' } }) }]);
+    const [item] = await app.projects.list({ size: 20 });
+    const full = await app.projects.get(item.id);
+    assert.equal(calls[1].url, `${PROJECTS}/${ID}`);
+    assert.deepEqual(full.settings, { app: 'crava', designing: { device: 'phone' } });
+    assert.equal(full.version, item.version);
+  });
+});
+
 describe('projects.update', () => {
   it('without expectedVersion sends no If-Match - unconditional, as before', async () => {
     const { app, calls } = client([{ body: project(8, { theme: 'system' }) }]);
