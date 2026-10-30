@@ -10,6 +10,8 @@ export interface ShareDecision {
 }
 
 export interface ShareComment {
+  /** The comment's id (connection AppShares.Comment). */
+  id?: string;
   author: 'GUEST' | 'OWNER';
   /** The name the guest gave; null for the owner. */
   name: string | null;

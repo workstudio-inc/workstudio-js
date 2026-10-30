@@ -562,6 +562,10 @@ export class Auth {
       status: res.status,
       error: typeof body?.error === 'string' ? body.error : undefined,
       description: typeof body?.error_description === 'string' ? body.error_description : undefined,
+      // The platform's own reason beside the RFC 6749 `error`: NOT_A_MEMBER (403, with `organization`) or
+      // MEMBERSHIP_UNAVAILABLE (503) - connection OAuthTokenExchangeController.
+      code: typeof body?.code === 'string' ? body.code : undefined,
+      body: body && typeof body === 'object' && !Array.isArray(body) ? body : undefined,
       retryAfterMs: retryAfterMs(res.headers?.get?.('Retry-After') ?? null),
     };
   }
@@ -577,7 +581,8 @@ export class Auth {
     const answer = await this.call(`${this.config.apiUrl}/api/v1/workflow/connection/oauth/token`, swapForm(tokens));
     if (!answer.ok || typeof answer.body.access_token !== 'string') {
       const failed = answer.ok ? undefined : answer;
-      throw new AppError(failed?.status ?? 502, failed?.description ?? 'You could not be signed in just now. Please try again.', failed?.error);
+      throw new AppError(failed?.status ?? 502, failed?.description ?? 'You could not be signed in just now. Please try again.',
+        failed?.code ?? failed?.error, failed?.body);
     }
     return signedInFrom(tokens, answer.body as unknown as SwapAnswer, tokens.refresh_token);
   }
@@ -596,6 +601,10 @@ interface Failed {
   status: number;
   error?: string;
   description?: string;
+  /** The platform's own reason, when it gave one besides `error`. */
+  code?: string;
+  /** The refusal as it came. */
+  body?: Record<string, unknown>;
   retryAfterMs?: number;
 }
 
@@ -648,7 +657,7 @@ function asError(failed: Failed, phase: 'refresh' | 'swap'): AppError {
   const message =
     failed.description ??
     (transient(failed.status) ? 'Your sign-in could not be renewed just now. Please try again shortly.' : phase === 'swap' ? 'You could not be signed in just now. Please try again.' : 'Sign-in did not complete. Please try again.');
-  return new AppError(failed.status, message, failed.error);
+  return new AppError(failed.status, message, failed.code ?? failed.error, failed.body);
 }
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));

@@ -12,7 +12,8 @@ export type RequestParty = 'requester' | 'owner';
 
 /** A guest share the owner attached to a reply - a priced proposal, say. */
 export interface RequestShare {
-  token: string;
+  /** Null once the share is withdrawn or expired (`active` false): there is nothing left to open. */
+  token: string | null;
   kind: string;
   title: string;
   /** False once the share is withdrawn or expired. */
@@ -86,17 +87,19 @@ export interface ListingRequest<T = Record<string, unknown>> {
   endedBy: RequestParty | null;
   listing: RequestListing;
   requester: RequestRequester;
-  /** The owner's view only: whether the requester is blocked from the owner's listings. */
-  blocked?: boolean;
-  /** With one request ({@link Requests.get}, {@link Inbox.get} and the actions); absent in a list. */
-  payload?: T;
+  /** The owner's view only: whether the requester is blocked from the owner's listings; null in a list. */
+  blocked?: boolean | null;
+  /** With one request ({@link Requests.get}, {@link Inbox.get} and the actions); null in a list. */
+  payload?: T | null;
   /**
    * The requester's attachments, seen by both sides. With one request (an empty list when there are
-   * none, or once they were cleared); absent in a list.
+   * none, or once they were cleared); null in a list.
    */
-  attachments?: RequestAttachment[];
-  /** With one request; absent in a list. */
-  messages?: RequestMessage[];
+  attachments?: RequestAttachment[] | null;
+  /** With one request; null in a list. */
+  messages?: RequestMessage[] | null;
+  /** The shared project this request became, when it did (connection AppRequests.RequestView). */
+  projectId?: string | null;
   createdAt: string;
   updatedAt: string;
   answeredAt: string | null;

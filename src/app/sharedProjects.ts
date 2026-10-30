@@ -86,6 +86,8 @@ export interface ProjectEntry {
   body: string | null;
   /** Its author deleted their account: show "Message removed". */
   removed: boolean;
+  /** The guest's name, on a comment brought over from a share; null otherwise (connection AppProjects.Entry). */
+  name?: string | null;
   /** Always empty in this version. */
   attachments: unknown[];
   revision: number | null;

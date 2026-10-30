@@ -9,20 +9,22 @@ import type { DeletionCheck } from './store';
 /** The person as this App knows them. */
 export interface Me {
   accountId: string;
-  /** What they are called in the App - theirs to change with {@link Account.update}. */
-  displayName?: string;
+  /** What they are called in the App - theirs to change with {@link Account.update}; null until they set one. */
+  displayName?: string | null;
   /** Their installs of the App, by instance. */
   apps?: string[];
   [key: string]: unknown;
 }
 
-/** This month's AI allowance in the App. */
+/** This month's AI allowance in the App (ai-runtime EndUserConversationsController.Allowance). */
 export interface Allowance {
   usedUsd: number;
   /** Null when the App sets no monthly allowance. */
   monthlyBudgetUsd: number | null;
-  /** The day it starts again, e.g. `2026-11-01`. */
-  resetsOn: string;
+  /** The day it starts again, e.g. `2026-11-01`; null for an allowance given once (`period: 'once'`), which never resets. */
+  resetsOn: string | null;
+  /** `month`, or `once` for an allowance the person's plan gives once. Absent from a platform from before 2026-10-22. */
+  period?: 'month' | 'once';
 }
 
 /** The person's account in this App. */
@@ -433,7 +435,8 @@ export class ContentPackReader<T> {
    */
   async page(options: ContentPageOptions = {}): Promise<ContentPage<T>> {
     const q = new URLSearchParams();
-    q.set('limit', String(options.limit ?? 60));
+    // The platform answers 400 outside 1..60 (catalog ContentPages.MAX_LIMIT); the local paging clamps the same way.
+    q.set('limit', String(Math.min(60, Math.max(1, Math.floor(options.limit ?? 60)))));
     if (options.cursor) q.set('cursor', options.cursor);
     for (const t of tagsOf(options.tag)) q.append('tag', t);
     if (options.fields?.length) q.set('fields', options.fields.join(','));
@@ -586,6 +589,12 @@ export interface Picture {
   credits?: Record<string, unknown>;
   /** Whole credits this picture used. */
   creditsUsed?: number;
+  /** This picture's id, when it was charged - what a free redo names. */
+  pictureId?: string;
+  /** True when this picture was a free redo. */
+  redo?: boolean;
+  /** Free redos the person has left, when the App gives them. */
+  freeRedosLeft?: number;
 }
 
 /**
@@ -614,7 +623,10 @@ export class Images {
       if (outOfCredits) throw this.http.paused(outOfCredits);
       const paused = e instanceof AppError ? AiPaused.from(e.details ?? { code: e.code }, e.message) : null;
       if (paused) throw this.http.paused(paused);
-      if (e instanceof AppError && (e.status === 402 || e.code === 'ALLOWANCE_USED')) throw new AllowanceUsed(e.message);
+      // 402 is also "pictures are not available in this App" (NO_ALLOWANCE): only the allowance codes are AllowanceUsed.
+      if (e instanceof AppError && (e.code === 'ALLOWANCE_USED' || e.code === 'COST_POLICY_EXCEEDED' || (e.status === 402 && !e.code))) {
+        throw new AllowanceUsed(e.message);
+      }
       throw e;
     }
   }
