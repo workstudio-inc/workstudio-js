@@ -16,11 +16,43 @@ export interface ConversationSummary {
   lastMessageAt?: string;
 }
 
-/** One turn of a conversation's history. */
+/**
+ * One turn of a conversation's history, as the platform keeps it (`AgentTurn`): `type` is the platform's own kind -
+ * `USER_MESSAGE`, `ASSISTANT_MESSAGE`, `TOOL_CALL`, `TOOL_RESULT`, `ERROR`, `SYSTEM`, `SYSTEM_SUMMARY`.
+ *
+ * `role` is derived from it by the SDK (the platform sends none): `user` and `assistant` are the messages to show;
+ * `tool`, `error` and `system` are the agent's own working, which a chat screen usually leaves out. `content` is
+ * `''` for a turn that has no text (a tool call).
+ */
 export interface Turn {
-  role: string;
+  role: 'user' | 'assistant' | 'tool' | 'error' | 'system' | (string & {});
   content: string;
+  /** The platform's kind of turn; see above. */
+  type?: string;
+  /** Epoch milliseconds. */
+  timestamp?: number;
+  attachmentIds?: string[] | null;
   [key: string]: unknown;
+}
+
+/** The SDK's `role` for one of the platform's turn kinds. */
+function roleOf(type: unknown): string {
+  switch (type) {
+    case 'USER_MESSAGE': return 'user';
+    case 'ASSISTANT_MESSAGE': return 'assistant';
+    case 'TOOL_CALL':
+    case 'TOOL_RESULT': return 'tool';
+    case 'ERROR': return 'error';
+    case 'SYSTEM':
+    case 'SYSTEM_SUMMARY': return 'system';
+    default: return typeof type === 'string' ? type.toLowerCase() : 'assistant';
+  }
+}
+
+/** A history turn as the platform sends it, with the `role` and `content` the SDK promises. */
+function turnOf(raw: Record<string, unknown>): Turn {
+  const role = typeof raw.role === 'string' ? raw.role : roleOf(raw.type);
+  return { ...raw, role, content: typeof raw.content === 'string' ? raw.content : '' };
 }
 
 export interface StartOptions {
@@ -93,6 +125,11 @@ export interface Reply {
   credits?: CreditBalance;
   /** Whole credits this turn used, after any refund. */
   creditsUsed?: number;
+  /**
+   * True when the person stopped the turn (`chat.stop`, from this page or another) before it finished: `text` is what
+   * streamed until then. What it used so far is kept, as `turnRef` / `notCharged` say.
+   */
+  cancelled?: boolean;
 }
 
 /**
@@ -160,8 +197,9 @@ export class TurnFailed extends AppError {
   readonly turnRef?: string;
   readonly notCharged: boolean;
 
-  constructor(status: number, message: string, code: string | undefined, turnRef: string | undefined, notCharged: boolean) {
-    super(status, message, code);
+  constructor(status: number, message: string, code: string | undefined, turnRef: string | undefined, notCharged: boolean,
+    details?: Record<string, unknown>) {
+    super(status, message, code, details);
     this.name = 'TurnFailed';
     this.turnRef = turnRef;
     this.notCharged = notCharged;
@@ -235,7 +273,10 @@ export class Conversation {
       const body = await res.json().catch(() => null) as Record<string, unknown> | null;
       const refused = body && typeof body === 'object' ? refusalOf(body, undefined, res.status) : null;
       if (refused) throw refused instanceof DesignRunRefused ? refused : this.http.paused(refused);
-      throw new AppError(res.status, 'No answer just now. Please try again.', typeof body?.code === 'string' ? body.code : undefined);
+      const code = typeof body?.code === 'string' ? body.code : undefined;
+      // DAILY_LIMIT (429): the platform's own words say when to ask again; `details.resetAt` says it exactly.
+      const words = code === 'DAILY_LIMIT' && typeof body?.message === 'string' ? body.message : 'No answer just now. Please try again.';
+      throw new AppError(res.status, words, code, body && typeof body === 'object' ? body : undefined);
     }
     if (!res.body) throw new AppError(res.status, 'No answer just now. Please try again.');
 
@@ -244,6 +285,7 @@ export class Conversation {
     let buffer = '';
     let streamed = '';
     let turn: { turnRef?: string; notCharged?: boolean; waivable?: boolean; credits?: CreditBalance; creditsUsed?: number } = {};
+    let name: string | undefined;
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -251,13 +293,10 @@ export class Conversation {
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
       for (const line of lines) {
+        name = eventName(line, name);
         if (!line.startsWith('data:')) continue;
-        let event: Record<string, unknown>;
-        try {
-          event = JSON.parse(line.slice(5).trim()) as Record<string, unknown>;
-        } catch {
-          continue;
-        }
+        const event = eventOf(line, name);
+        if (!event) continue;
         if (event.type === 'allowance') {
           // How the turn was settled against the person's allowance; arrives just before done/error.
           turn = {
@@ -293,7 +332,18 @@ export class Conversation {
           const paused = AiPaused.from(event, msg);
           if (paused) throw this.http.paused(paused);
           if (code === 'BUDGET_EXCEEDED' || code === 'COST_POLICY_EXCEEDED') throw new AllowanceUsed(msg);
-          throw new TurnFailed(502, msg ?? 'The answer stopped partway through.', code || undefined, turn.turnRef, turn.notCharged === true);
+          throw new TurnFailed(502, msg ?? 'The answer stopped partway through.', code || undefined, turn.turnRef, turn.notCharged === true,
+            event);
+        } else if (event.type === 'cancelled') {
+          // The person stopped the turn: the stream's last event - no done and no error follow it.
+          return {
+            text: streamed,
+            usage: {},
+            ...turn,
+            turnRef: typeof event.turnRef === 'string' ? event.turnRef : turn.turnRef,
+            notCharged: event.notCharged === true || turn.notCharged === true,
+            cancelled: true,
+          };
         }
       }
     }
@@ -343,6 +393,29 @@ export class Conversation {
 const num = (v: unknown) => (typeof v === 'number' ? v : undefined);
 
 const RUNTIME = '/api/v1/workflow/ai-runtime/sessions/mine/';
+
+/** The name an `event:` line gives the data lines after it, else the one in force (a blank line ends an event). */
+function eventName(line: string, current: string | undefined): string | undefined {
+  if (line.startsWith('event:')) return line.slice(6).trim() || undefined;
+  if (line.trim() === '') return undefined;
+  return current;
+}
+
+/**
+ * One SSE data line as an event. Its `type` is the data's own when it has one, else the `event:` name: the platform
+ * sends some events - `turn_outcome` - as a bare object, named only by the `event:` line.
+ */
+function eventOf(line: string, name: string | undefined): Record<string, unknown> | null {
+  let event: unknown;
+  try {
+    event = JSON.parse(line.slice(5).trim());
+  } catch {
+    return null;
+  }
+  if (!event || typeof event !== 'object' || Array.isArray(event)) return null;
+  const e = event as Record<string, unknown>;
+  return typeof e.type === 'string' || !name ? e : { ...e, type: name };
+}
 
 function idOf(conversation: Conversation | string): string {
   const id = typeof conversation === 'string' ? conversation : conversation?.id;
@@ -465,6 +538,7 @@ class Turns {
     let buffer = '';
     let text = shownSoFar();
     let outcome: TurnOutcome | null = null;
+    let name: string | undefined;
     try {
       for (;;) {
         const { done, value } = await reader.read();
@@ -473,13 +547,10 @@ class Turns {
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
         for (const line of lines) {
+          name = eventName(line, name);
           if (!line.startsWith('data:')) continue;
-          let event: Record<string, unknown>;
-          try {
-            event = JSON.parse(line.slice(5).trim()) as Record<string, unknown>;
-          } catch {
-            continue;
-          }
+          const event = eventOf(line, name);
+          if (!event) continue;
           if (event.type === 'reconnect') {
             text = typeof event.content === 'string' ? event.content : '';
             show(text);
@@ -492,7 +563,8 @@ class Turns {
             if (event.contentReplaced === true && typeof event.content === 'string') text = event.content;
             // The turn ended on this stream: its settled outcome (charge, refund) is read back.
             return { kind: 'ended', outcome: await this.outcome(id), text };
-          } else if (event.type === 'error') {
+          } else if (event.type === 'error' || event.type === 'cancelled') {
+            // Failed, or stopped (`cancelled` is a stopped turn's last event): how it ended is read back.
             return { kind: 'ended', outcome: await this.outcome(id) };
           } else if (event.type === 'turn_running') {
             return { kind: 'elsewhere', pollAfterMs: num(event.pollAfterMs) ?? 3_000 };
@@ -600,10 +672,14 @@ export class Chat {
 
   /** A conversation's turns so far. */
   async history(conversationId: string): Promise<Turn[]> {
-    const body = await this.http.request<{ success?: boolean; history?: { turns?: Turn[] }; error?: string }>(
+    const body = await this.http.request<{ success?: boolean; history?: { turns?: unknown[] }; error?: string }>(
       'GET', `${this.http.config.aiRuntimeUrl}/api/v1/workflow/ai-runtime/sessions/history/${encodeURIComponent(conversationId)}`);
     if (body && body.success === false) throw new AppError(404, body.error ?? 'That conversation could not be found.');
-    return body?.history?.turns ?? [];
+    // The platform's turns (AgentTurn) carry `type`, not `role`: each is given the role the SDK promises.
+    const turns = body?.history?.turns;
+    return Array.isArray(turns)
+      ? turns.filter((t): t is Record<string, unknown> => !!t && typeof t === 'object').map(turnOf)
+      : [];
   }
 
   /** Rename one of the person's conversations. */
