@@ -35,6 +35,9 @@
  *   events    the App's own events ("lesson.cancelled"), now or at a time, about the person or a
  *             contact - which its automations email or push as the App
  *   notifications  which of the App's emails the person gets
+ *   contactForm  the App's public contact form, for visitors who have not signed in: the Turnstile check
+ *             (on the page on *.workstudio.run, in the platform's challenge frame on the App's own domain)
+ *             and the message, which becomes a ticket in the publisher's support inbox
  *
  * Isolation is the platform's, not the App's: every call carries the person's token, and the person
  * can only ever reach their own install of the App. See https://docs.work.studio.
@@ -44,6 +47,7 @@ import { Auth } from './auth';
 import { Billing } from './billing';
 import { Credits } from './credits';
 import { Chat } from './chat';
+import { ContactForm } from './contact';
 import { type AppConfig, resolve } from './config';
 import { Http } from './http';
 import { Invites } from './invites';
@@ -78,6 +82,8 @@ export interface App {
   readonly contacts: Contacts;
   readonly events: Events;
   readonly notifications: Notifications;
+  /** The App's public contact form (needs `appId`): the Turnstile check and sending the message. */
+  readonly contactForm: ContactForm;
 }
 
 /** Create the client for one App. */
@@ -108,6 +114,7 @@ export function createApp(config: AppConfig): App {
     contacts: new Contacts(http),
     events: new Events(http),
     notifications: new Notifications(http),
+    contactForm: new ContactForm(http),
   };
 }
 
@@ -124,6 +131,8 @@ export type { DeletionCheck, ManageTarget, Restored, RestoredPurchase, RestoreRe
 export { Credits } from './credits';
 export type { BuyOptions, CreditBalance, CreditEstimate, CreditEstimateOptions, CreditHistory, CreditHistoryEntry, CreditMoney, CreditPack, CreditPacks, CreditPacksOptions, CreditPacksWhy, CreditsOptions, CreditUnit } from './credits';
 export { Chat, Conversation, TurnFailed } from './chat';
+export { APP_CONTACT_SITE_KEY, CHALLENGE_ORIGIN, ContactCheck, ContactForm, PLATFORM_APP_DOMAIN, TURNSTILE_SCRIPT } from './contact';
+export type { ContactCategory, ContactCheckMode, ContactCheckOptions, ContactCheckSize, ContactCheckTheme, ContactMessage, ContactReceipt, ContactSendOptions } from './contact';
 export type { ConversationSummary, DesignRunOptions, ReconnectOptions, Reply, SendOptions, StartOptions, StopResult, Turn, TurnOutcome, Waived } from './chat';
 export { DESIGN_RUN_MAX_FIX_TURNS, DesignRuns, isDesignRunId } from './designRuns';
 export type { DesignRun, DesignRunCloseResult } from './designRuns';
