@@ -325,6 +325,26 @@ const designs = app.data.collection<{ title: string; status: string }>('crava_de
 const saved = await designs.create({ title: 'Side table', status: 'draft' });
 await designs.update(saved.id, { status: 'checked' });     // merges; replace() replaces
 
+// Ranges and lists on declared fields, a sort by the field's type, and pages by cursor. `where` is "equals".
+const page = await designs.findPage({
+  filter: { amount: { gte: 5, lt: 9 }, status: { in: ['draft', 'checked'] } },
+  sort: { by: 'amount' },                                  // numbers as numbers; `sortBy` sorts as text
+  limit: 20,
+  after: null,                                             // then page.nextCursor
+});
+page.total;                                                // how many match in all; `count: false` skips it
+
+// Counts and totals over every match, worked out on the platform: at most 100 groups.
+const { count, sum, groups } = await designs.aggregate({ sum: 'amount', groupBy: 'status' });
+
+// The records now, and again when something changes: it looks every 10 s, never under 5 s, and not while hidden.
+const stop = designs.watch(records => show(records), { where: { status: 'draft' } });
+
+// Writes that check first: a key already in use is refused (RECORD_EXISTS), and so is a record changed since it
+// was read (RECORD_CHANGED).
+await designs.create({ title: 'Bench', status: 'draft' }, { key: 'bench', ifAbsent: true });
+await designs.update(saved.id, { status: 'built' }, { ifUnchanged: true });
+
 // An internal App (signIn.audience: members) may share a collection with its members (shared: members in the
 // manifest): the same calls, but every signed-in member reads and changes the same records, and each says who
 // created and last changed it - set by the platform, never by the App.
