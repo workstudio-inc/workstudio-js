@@ -102,6 +102,15 @@ describe('findPage', () => {
     assert.equal((await app.data.collection('records').findPage()).records[0].createdBy, ALICE);
   });
 
+  it('asks not to count only when told to, and then has no total', async () => {
+    const { app, calls } = client([{ body: { records: [] } }, { body: { records: [], total: 0 } }]);
+    const notes = app.data.collection('notes');
+    assert.equal((await notes.findPage({ count: false })).total, null);
+    assert.equal(calls[0].url, `${NOTES}?%24count=false`);
+    await notes.findPage({ count: true });
+    assert.equal(calls[1].url, NOTES);
+  });
+
   it('leaves find as it was: the records, and no total', async () => {
     const own = { id: '3', data: { title: 'Mine' } };
     const { app } = client([{ body: { records: [own], total: 42 } }]);

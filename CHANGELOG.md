@@ -9,6 +9,7 @@ file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is
 ### Added
 - `Collection.findPage(options)`: one page of records and `total`, how many match across every page. Takes the same
   options as `find`, which is unchanged.
+- `count: false` on `find` and `findPage` skips counting every match; `total` is then null.
 
 ## 0.16.0 - 2026-10-31
 

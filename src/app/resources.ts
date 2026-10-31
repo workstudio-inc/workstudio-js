@@ -252,12 +252,14 @@ export interface FindOptions {
   offset?: number;
   sortBy?: string;
   ascending?: boolean;
+  /** `false` skips counting every match, which a large collection pays for on each page; `total` is then null. */
+  count?: boolean;
 }
 
 /** One page of `findPage`. */
 export interface FindPage<T = Record<string, unknown>> {
   records: DataRecord<T>[];
-  /** How many records match, across every page. Null when the platform did not say. */
+  /** How many records match, across every page. Null when asked not to count (`count: false`). */
   total: number | null;
 }
 
@@ -281,6 +283,7 @@ export class Collection<T = Record<string, unknown>> {
     if (options.offset !== undefined) q.set('offset', String(options.offset));
     if (options.sortBy) q.set('sortBy', options.sortBy);
     if (options.ascending !== undefined) q.set('ascending', String(options.ascending));
+    if (options.count === false) q.set('$count', 'false');
     const body = await this.http.request<{ records?: DataRecord<T>[]; items?: DataRecord<T>[]; total?: number } | DataRecord<T>[]>(
       'GET', this.url(q.toString() ? `?${q}` : ''));
     const records = (Array.isArray(body) ? body : body?.records ?? body?.items ?? []).map(r => authored(r));
