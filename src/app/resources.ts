@@ -216,6 +216,10 @@ export class Projects {
 // Data
 // ---------------------------------------------------------------------------------------------
 
+const WATCH_DEFAULT_MS = 10_000;
+const WATCH_FLOOR_MS = 5_000;
+const WATCH_CEILING_MS = 60_000;
+
 export interface DataRecord<T = Record<string, unknown>> {
   id: string;
   data: T;
@@ -271,6 +275,37 @@ export interface FindOptions {
   after?: string | null;
 }
 
+/** What `aggregate` asks for. `where` and `filter` narrow it, as on `find`. All optional: with none it counts. */
+export interface AggregateOptions {
+  where?: Record<string, string | number | boolean>;
+  filter?: Record<string, FieldFilter>;
+  /** A declared number field to total. Only values that are numbers are added. */
+  sum?: string;
+  /** A declared field to break the count and the total down by, the largest group first. */
+  groupBy?: string;
+  /** How many groups: at most 100, which is also the default. */
+  limit?: number;
+}
+
+/** Counts and totals over the records the person may read. */
+export interface Aggregate {
+  count: number;
+  /** Null when no `sum` was asked for, or no record holds a number there. */
+  sum: number | null;
+  /** One per value of `groupBy`; `value` is null for records with none. Absent without `groupBy`. */
+  groups?: Array<{ value: string | null; count: number; sum?: number }>;
+  /** There were more groups than `limit`. */
+  truncated?: boolean;
+}
+
+/** What `watch` looks at, and how often. */
+export interface WatchOptions extends Omit<FindOptions, 'after' | 'count'> {
+  /** How often to look, in milliseconds. Default 10,000; never under 5,000. Changes show up this late at worst. */
+  intervalMs?: number;
+  /** Told when a look fails. Looking goes on, slower, up to once a minute. */
+  onError?(error: unknown): void;
+}
+
 /** What a field must be. Dates compare as text, so keep them in ISO form. */
 export interface FieldFilter {
   gt?: string | number;
@@ -299,18 +334,15 @@ export interface FindPage<T = Record<string, unknown>> {
 export class Collection<T = Record<string, unknown>> {
   constructor(private readonly http: Http, readonly name: string) {}
 
-  private url(suffix = '') {
-    return `${this.http.config.dataUrl}/api/v1/workflow/data/collections/${encodeURIComponent(this.name)}/records${suffix}`;
+  private url(suffix = '', path = 'records', query?: URLSearchParams) {
+    const q = query?.toString();
+    return `${this.http.config.dataUrl}/api/v1/workflow/data/collections/${encodeURIComponent(this.name)}/${path}${suffix}${q ? `?${q}` : ''}`;
   }
 
-  private async read(options: FindOptions): Promise<FindPage<T>> {
+  /** `where` and `filter` as a query string, as `find` and `aggregate` both send them. */
+  private conditions(options: { where?: Record<string, string | number | boolean>; filter?: Record<string, FieldFilter> }): URLSearchParams {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(options.where ?? {})) q.set(k, String(v));
-    if (options.limit !== undefined) q.set('limit', String(options.limit));
-    if (options.offset !== undefined) q.set('offset', String(options.offset));
-    if (options.sortBy) q.set('sortBy', options.sortBy);
-    if (options.ascending !== undefined) q.set('ascending', String(options.ascending));
-    if (options.count === false) q.set('$count', 'false');
     for (const [field, ops] of Object.entries(options.filter ?? {})) {
       for (const op of ['gt', 'gte', 'lt', 'lte'] as const) {
         const v = ops[op];
@@ -322,6 +354,16 @@ export class Collection<T = Record<string, unknown>> {
         for (const v of ops.in) q.append(`${field}[in]`, String(v));
       }
     }
+    return q;
+  }
+
+  private async read(options: FindOptions): Promise<FindPage<T>> {
+    const q = this.conditions(options);
+    if (options.limit !== undefined) q.set('limit', String(options.limit));
+    if (options.offset !== undefined) q.set('offset', String(options.offset));
+    if (options.sortBy) q.set('sortBy', options.sortBy);
+    if (options.ascending !== undefined) q.set('ascending', String(options.ascending));
+    if (options.count === false) q.set('$count', 'false');
     if (options.sort) q.set('$sort', `${options.sort.by}:${options.sort.ascending ? 'asc' : 'desc'}`);
     if (options.after !== undefined) q.set('$after', options.after ?? '');
     const body = await this.http.request<{ records?: DataRecord<T>[]; items?: DataRecord<T>[]; total?: number; nextCursor?: string } | DataRecord<T>[]>(
@@ -338,6 +380,66 @@ export class Collection<T = Record<string, unknown>> {
   /** One page of records, and how many match across all pages. Takes the same options as `find`. */
   findPage(options: FindOptions = {}): Promise<FindPage<T>> {
     return this.read(options);
+  }
+
+  /**
+   * Counts, totals and groups over the records the person may read, worked out on the platform, so they cover every
+   * match rather than one page.
+   */
+  async aggregate(options: AggregateOptions = {}): Promise<Aggregate> {
+    const q = this.conditions(options);
+    if (options.sum) q.set('$sum', options.sum);
+    if (options.groupBy) q.set('$groupBy', options.groupBy);
+    if (options.limit !== undefined) q.set('limit', String(options.limit));
+    const body = await this.http.request<Aggregate>('GET', this.url('', 'aggregate', q));
+    return { ...body, sum: body?.sum ?? null };
+  }
+
+  /**
+   * Hear about changes to these records: `listener` gets them now, and again whenever something has changed. By looking
+   * every so often, so a change shows up seconds late and a person's own write does too. A look costs one small read,
+   * and the records are only fetched when something changed. Paused while the page is hidden.
+   *
+   * @returns stops watching
+   */
+  watch(listener: (records: DataRecord<T>[]) => void, options: WatchOptions = {}): () => void {
+    const { intervalMs, onError, ...find } = options;
+    const every = Math.max(intervalMs ?? WATCH_DEFAULT_MS, WATCH_FLOOR_MS);
+    let wait = every;
+    let last: string | null = null;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const look = async () => {
+      if (stopped) return;
+      if ((globalThis as { document?: { hidden?: boolean } }).document?.hidden) {
+        timer = setTimeout(look, wait);
+        return;
+      }
+      try {
+        // The newest change and how many there are: a delete moves the count, and any other change the newest.
+        const head = await this.read({ where: find.where, filter: find.filter, sort: { by: 'updatedAt' }, limit: 1 });
+        const newest = head.records[0];
+        const seen = `${head.total}/${newest?.id ?? ''}/${newest?.updatedAt ?? ''}`;
+        if (seen !== last) {
+          const records = await this.find(find);
+          if (stopped) return;
+          last = seen;
+          listener(records);
+        }
+        wait = every;
+      } catch (e) {
+        wait = Math.min(wait * 2, WATCH_CEILING_MS);
+        onError?.(e);
+      }
+      if (!stopped) timer = setTimeout(look, wait);
+    };
+
+    timer = setTimeout(look, 0);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }
 
   /** One record, or null when the person has no such record. */

@@ -14,6 +14,9 @@ file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is
   `createdAt` and `updatedAt`.
 - `sort: { by, ascending }` sorts by the field's declared type, so numbers sort as numbers. `sortBy` still sorts as text.
 - `after`, and `nextCursor` on `findPage`: pages by cursor, stable while records are added.
+- `Collection.aggregate({ sum, groupBy, where, filter, limit })`: counts, totals and groups over every match.
+- `Collection.watch(listener, options)`: the records now, and again when something changes, by looking every 10 s by
+  default and never under 5 s. Paused while the page is hidden.
 - `create(data, { key, ifAbsent: true })` refuses a key already in use (`RECORD_EXISTS`).
 - `replace(id, data, { ifUpdatedAt })` and `update(id, changes, { ifUnchanged: true })` refuse a record that changed
   since it was read (`RECORD_CHANGED`).

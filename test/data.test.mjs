@@ -2,7 +2,7 @@
 // an internal App shares with its members; a shared record says who created and last changed it. Runs on the built
 // package (npm test builds first).
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
 import { createApp } from '../dist/app.js';
 
 const API = 'https://api.example.test';
@@ -219,6 +219,142 @@ describe('writes that check first', () => {
     assert.deepEqual(calls[3].body, { record: { c: 3 } });
     assert.equal(calls[3].url, `${NOTES}/1`);
   });
+});
+
+describe('aggregate', () => {
+  const AGG = `${API}/api/v1/workflow/data/collections/notes/aggregate`;
+
+  it('asks for a total and groups, narrowed as find is', async () => {
+    const { app, calls } = client([{ body: { count: 2, sum: 12.5, groups: [{ value: 'new', count: 2, sum: 12.5 }] } }]);
+    const out = await app.data.collection('notes').aggregate({ sum: 'amount', groupBy: 'stage', where: { won: true }, filter: { amount: { gte: 1 } }, limit: 5 });
+    assert.equal(decodeURIComponent(calls[0].url.slice(AGG.length + 1)), 'won=true&amount[gte]=1&$sum=amount&$groupBy=stage&limit=5');
+    assert.deepEqual(out, { count: 2, sum: 12.5, groups: [{ value: 'new', count: 2, sum: 12.5 }] });
+  });
+
+  it('says no sum as null, and a plain count needs no options', async () => {
+    const { app, calls } = client([{ body: { count: 3 } }]);
+    assert.deepEqual(await app.data.collection('notes').aggregate(), { count: 3, sum: null });
+    assert.equal(calls[0].url, AGG);
+  });
+
+  it('refuses an empty list here too', async () => {
+    const { app, calls } = client();
+    await assert.rejects(app.data.collection('notes').aggregate({ filter: { stage: { in: [] } } }), /is empty/);
+    assert.equal(calls.length, 0);
+  });
+});
+
+describe('watch', () => {
+  const page = (records, total) => ({ body: { records, total } });
+  const a = { id: '1', data: { title: 'a' }, updatedAt: '2026-10-31T10:00:00Z' };
+  const b = { id: '2', data: { title: 'b' }, updatedAt: '2026-10-31T10:00:05Z' };
+  /** Let the timer that is due fire, and everything it awaits finish. */
+  const tick = async (ms) => {
+    mock.timers.tick(ms);
+    for (let i = 0; i < 40; i++) await Promise.resolve().then(() => new Promise(r => setImmediate(r)));
+  };
+  const watching = (fn) => async () => {
+    mock.timers.enable({ apis: ['setTimeout'] });
+    try {
+      await fn();
+    } finally {
+      mock.timers.reset();
+    }
+  };
+
+  it('gives the records straight away, then only when something changed', watching(async () => {
+    const { app, calls } = client([page([a], 1), page([a], 1), page([a], 1), page([b], 2), page([b, a], 2)]);
+    const heard = [];
+    const stop = app.data.collection('notes').watch(r => heard.push(r.map(x => x.id)));
+
+    await tick(0);
+    assert.deepEqual(heard, [['1']]);
+    assert.equal(calls.length, 2);
+
+    await tick(10_000);
+    assert.deepEqual(heard, [['1']], 'nothing changed, so no second list');
+    assert.equal(calls.length, 3, 'and no fetch of the records');
+
+    await tick(10_000);
+    assert.deepEqual(heard, [['1'], ['2', '1']]);
+    stop();
+  }));
+
+  it('notices a delete, which moves no timestamp', watching(async () => {
+    const { app } = client([page([b], 2), page([b, a], 2), page([b], 1), page([b], 1)]);
+    const heard = [];
+    const stop = app.data.collection('notes').watch(r => heard.push(r.length));
+    await tick(0);
+    await tick(10_000);
+    assert.deepEqual(heard, [2, 1]);
+    stop();
+  }));
+
+  it('looks with the smallest read that can see a change, narrowed as asked', watching(async () => {
+    const { app, calls } = client([page([a], 1), page([a], 1)]);
+    const stop = app.data.collection('notes').watch(() => {}, { where: { stage: 'new' }, limit: 50 });
+    await tick(0);
+    const look = decodeURIComponent(calls[0].url);
+    assert.match(look, /stage=new/);
+    assert.match(look, /limit=1/);
+    assert.match(look, /\$sort=updatedAt:desc/);
+    assert.match(decodeURIComponent(calls[1].url), /limit=50/);
+    stop();
+  }));
+
+  it('never looks more often than every five seconds', watching(async () => {
+    const { app, calls } = client([page([a], 1), page([a], 1), page([a], 1)]);
+    const stop = app.data.collection('notes').watch(() => {}, { intervalMs: 10 });
+    await tick(0);
+    assert.equal(calls.length, 2);
+    await tick(4_999);
+    assert.equal(calls.length, 2);
+    await tick(1);
+    assert.equal(calls.length, 3);
+    stop();
+  }));
+
+  it('stops when told, and hears nothing after', watching(async () => {
+    const { app, calls } = client([page([a], 1), page([a], 1)]);
+    const stop = app.data.collection('notes').watch(() => {});
+    await tick(0);
+    stop();
+    await tick(60_000);
+    assert.equal(calls.length, 2);
+  }));
+
+  it('says a failed look, slows down, and carries on', watching(async () => {
+    const { app, calls } = client([{ status: 429, body: { code: 'APP_RATE_LIMITED', error: 'too many' } }, page([a], 1), page([a], 1)]);
+    const errors = [];
+    const heard = [];
+    const stop = app.data.collection('notes').watch(r => heard.push(r.length), { onError: e => errors.push(e.code) });
+    await tick(0);
+    assert.deepEqual(errors, ['APP_RATE_LIMITED']);
+    await tick(10_000);
+    assert.equal(calls.length, 1, 'twice the interval after a failure');
+    await tick(10_000);
+    assert.equal(calls.length, 3);
+    assert.deepEqual(heard, [1]);
+    stop();
+  }));
+
+  it('never looks while the page is hidden', watching(async () => {
+    const before = globalThis.document;
+    globalThis.document = { hidden: true };
+    try {
+      const { app, calls } = client([page([a], 1), page([a], 1)]);
+      const stop = app.data.collection('notes').watch(() => {});
+      await tick(0);
+      await tick(30_000);
+      assert.equal(calls.length, 0);
+      globalThis.document.hidden = false;
+      await tick(10_000);
+      assert.equal(calls.length, 2);
+      stop();
+    } finally {
+      globalThis.document = before;
+    }
+  }));
 });
 
 describe('the declared collections', () => {
