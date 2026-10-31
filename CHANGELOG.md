@@ -4,7 +4,7 @@
 file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is in
 `RELEASE-NOTES-sdk-contract-fixes.md`.
 
-## 0.16.0 (unreleased)
+## 0.16.0 - 2026-10-31
 
 ### Added
 - `Plan.monthlyBudgetSource` (`'PLAN' | 'APP' | 'PLATFORM_DEFAULT' | 'UNLIMITED' | 'NONE'`, exported as
