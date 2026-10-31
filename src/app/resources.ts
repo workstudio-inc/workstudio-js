@@ -254,6 +254,31 @@ export interface FindOptions {
   ascending?: boolean;
   /** `false` skips counting every match, which a large collection pays for on each page; `total` is then null. */
   count?: boolean;
+  /**
+   * Ranges and lists on declared fields, or on `createdAt` and `updatedAt`:
+   * `{ amount: { gte: 5, lt: 9 }, stage: { in: ['new', 'won'] } }`. All of them must hold, with `where`.
+   */
+  filter?: Record<string, FieldFilter>;
+  /**
+   * Sort by the field's declared type, so numbers sort as numbers, with records that have no value last; newest or
+   * largest first unless `ascending`. `sortBy` sorts as text, so 10 comes before 9.
+   */
+  sort?: { by: string; ascending?: boolean };
+  /**
+   * Page by position: `null` for the first page, then the `nextCursor` of the page before. Unlike `offset`, a late page
+   * costs no more than the first, and records added meanwhile do not shift it. Not with `offset`.
+   */
+  after?: string | null;
+}
+
+/** What a field must be. Dates compare as text, so keep them in ISO form. */
+export interface FieldFilter {
+  gt?: string | number;
+  gte?: string | number;
+  lt?: string | number;
+  lte?: string | number;
+  /** Any of these. At least one, at most 100. */
+  in?: Array<string | number | boolean>;
 }
 
 /** One page of `findPage`. */
@@ -261,6 +286,8 @@ export interface FindPage<T = Record<string, unknown>> {
   records: DataRecord<T>[];
   /** How many records match, across every page. Null when asked not to count (`count: false`). */
   total: number | null;
+  /** Pass as `after` for the next page. Null on the last page, and when paging by `offset`. */
+  nextCursor: string | null;
 }
 
 /**
@@ -284,10 +311,24 @@ export class Collection<T = Record<string, unknown>> {
     if (options.sortBy) q.set('sortBy', options.sortBy);
     if (options.ascending !== undefined) q.set('ascending', String(options.ascending));
     if (options.count === false) q.set('$count', 'false');
-    const body = await this.http.request<{ records?: DataRecord<T>[]; items?: DataRecord<T>[]; total?: number } | DataRecord<T>[]>(
+    for (const [field, ops] of Object.entries(options.filter ?? {})) {
+      for (const op of ['gt', 'gte', 'lt', 'lte'] as const) {
+        const v = ops[op];
+        if (v !== undefined) q.append(`${field}[${op}]`, String(v));
+      }
+      if (ops.in !== undefined) {
+        // Sent empty, this would be no condition at all, and every record would match instead of none.
+        if (ops.in.length === 0) throw new AppError(400, `The list of values for '${field}' is empty.`);
+        for (const v of ops.in) q.append(`${field}[in]`, String(v));
+      }
+    }
+    if (options.sort) q.set('$sort', `${options.sort.by}:${options.sort.ascending ? 'asc' : 'desc'}`);
+    if (options.after !== undefined) q.set('$after', options.after ?? '');
+    const body = await this.http.request<{ records?: DataRecord<T>[]; items?: DataRecord<T>[]; total?: number; nextCursor?: string } | DataRecord<T>[]>(
       'GET', this.url(q.toString() ? `?${q}` : ''));
     const records = (Array.isArray(body) ? body : body?.records ?? body?.items ?? []).map(r => authored(r));
-    return { records, total: !Array.isArray(body) && typeof body?.total === 'number' ? body.total : null };
+    const page = Array.isArray(body) ? undefined : body;
+    return { records, total: typeof page?.total === 'number' ? page.total : null, nextCursor: page?.nextCursor ?? null };
   }
 
   async find(options: FindOptions = {}): Promise<DataRecord<T>[]> {

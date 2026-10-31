@@ -10,6 +10,10 @@ file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is
 - `Collection.findPage(options)`: one page of records and `total`, how many match across every page. Takes the same
   options as `find`, which is unchanged.
 - `count: false` on `find` and `findPage` skips counting every match; `total` is then null.
+- `filter` on `find` and `findPage`: ranges (`gt`, `gte`, `lt`, `lte`) and lists (`in`) on declared fields and on
+  `createdAt` and `updatedAt`.
+- `sort: { by, ascending }` sorts by the field's declared type, so numbers sort as numbers. `sortBy` still sorts as text.
+- `after`, and `nextCursor` on `findPage`: pages by cursor, stable while records are added.
 
 ## 0.16.0 - 2026-10-31
 

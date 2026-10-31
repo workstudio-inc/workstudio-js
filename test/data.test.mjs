@@ -81,7 +81,7 @@ describe('findPage', () => {
     const options = { where: { stage: 'new' }, limit: 1, offset: 20, sortBy: 'title', ascending: true };
 
     const page = await notes.findPage(options);
-    assert.deepEqual(page, { records: [own], total: 42 });
+    assert.deepEqual(page, { records: [own], total: 42, nextCursor: null });
     await notes.find(options);
     assert.equal(calls[0].url, `${NOTES}?stage=new&limit=1&offset=20&sortBy=title&ascending=true`);
     assert.equal(calls[0].url, calls[1].url);
@@ -89,7 +89,7 @@ describe('findPage', () => {
 
   it('reads a total of zero as zero, on an empty page', async () => {
     const { app } = client([{ body: { records: [], total: 0 } }]);
-    assert.deepEqual(await app.data.collection('notes').findPage(), { records: [], total: 0 });
+    assert.deepEqual(await app.data.collection('notes').findPage(), { records: [], total: 0, nextCursor: null });
   });
 
   it('does not make a total up when the platform sends none', async () => {
@@ -115,6 +115,57 @@ describe('findPage', () => {
     const own = { id: '3', data: { title: 'Mine' } };
     const { app } = client([{ body: { records: [own], total: 42 } }]);
     assert.deepEqual(await app.data.collection('notes').find(), [own]);
+  });
+});
+
+describe('ranges, lists, sorts and cursors', () => {
+  const NOTES = `${API}/api/v1/workflow/data/collections/notes/records`;
+  const query = url => decodeURIComponent(url.slice(NOTES.length + 1));
+
+  it('sends a range and a list as conditions', async () => {
+    const { app, calls } = client([{ body: { records: [] } }]);
+    await app.data.collection('notes').find({ filter: { amount: { gte: 5, lt: 9 }, stage: { in: ['new', 'a,b'] } } });
+    assert.equal(query(calls[0].url), 'amount[gte]=5&amount[lt]=9&stage[in]=new&stage[in]=a,b');
+  });
+
+  it('refuses an empty list rather than matching every record', async () => {
+    const { app, calls } = client();
+    await assert.rejects(app.data.collection('notes').find({ filter: { stage: { in: [] } } }), /is empty/);
+    assert.equal(calls.length, 0);
+  });
+
+  it('sends zero and false, which are values', async () => {
+    const { app, calls } = client([{ body: { records: [] } }]);
+    await app.data.collection('notes').find({ filter: { amount: { gte: 0 }, won: { in: [false] } } });
+    assert.equal(query(calls[0].url), 'amount[gte]=0&won[in]=false');
+  });
+
+  it('sends a typed sort, newest or largest first unless told otherwise', async () => {
+    const { app, calls } = client([{ body: { records: [] } }, { body: { records: [] } }]);
+    await app.data.collection('notes').find({ sort: { by: 'amount' } });
+    await app.data.collection('notes').find({ sort: { by: 'amount', ascending: true } });
+    assert.equal(query(calls[0].url), '$sort=amount:desc');
+    assert.equal(query(calls[1].url), '$sort=amount:asc');
+  });
+
+  it('walks pages by cursor from null', async () => {
+    const { app, calls } = client([
+      { body: { records: [{ id: '1', data: {} }], total: 2, nextCursor: 'c1' } },
+      { body: { records: [{ id: '2', data: {} }], total: 2 } },
+    ]);
+    const notes = app.data.collection('notes');
+    const first = await notes.findPage({ limit: 1, after: null });
+    assert.equal(first.nextCursor, 'c1');
+    const second = await notes.findPage({ limit: 1, after: first.nextCursor });
+    assert.equal(second.nextCursor, null);
+    assert.equal(query(calls[0].url), 'limit=1&$after=');
+    assert.equal(query(calls[1].url), 'limit=1&$after=c1');
+  });
+
+  it('sends none of it to a call that asks for none of it', async () => {
+    const { app, calls } = client([{ body: { records: [] } }]);
+    await app.data.collection('notes').find({ where: { stage: 'new' }, limit: 5, sortBy: 'title' });
+    assert.equal(query(calls[0].url), 'stage=new&limit=5&sortBy=title');
   });
 });
 
