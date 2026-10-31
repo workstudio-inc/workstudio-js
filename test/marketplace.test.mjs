@@ -55,6 +55,13 @@ describe('app.listings', () => {
     assertCall(calls[0], 'PUT', `${BASE}/listings/shop`, input);
   });
 
+  it('save: the kind goes in the path and only there, so the platform applies that kind\'s rule', async () => {
+    const { app, calls } = client({ body: { ...LISTING, kind: 'supplier' } });
+    const input = { displayName: 'Ridge Lumber', zip: '02139' };
+    await app.listings.save('supplier', input);
+    assertCall(calls[0], 'PUT', `${BASE}/listings/supplier`, input);
+  });
+
   it('get: the listing', async () => {
     const { app, calls } = client({ body: LISTING });
     assert.deepEqual(await app.listings.get('shop'), LISTING);

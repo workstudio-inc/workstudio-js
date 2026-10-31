@@ -59,8 +59,8 @@ export interface ListingInput {
   radiusMiles?: number;
   contact?: { email?: string; phone?: string; website?: string };
   /**
-   * Default true. Being listed needs the App's required plan feature (403 `NEEDS_PLAN`); a draft
-   * (`false`) can be saved without it.
+   * Default true. Being listed needs the plan feature the App asks of this kind, if it asks one
+   * (403 `NEEDS_PLAN`); a draft (`false`) can be saved without it.
    */
   listed?: boolean;
 }
@@ -106,7 +106,9 @@ export interface NearOptions {
  * other signed-in people of the App find by ZIP code and send requests to ({@link Requests}).
  *
  * The person's own: {@link save}, {@link get}, {@link remove}. Anyone signed in: {@link near}.
- * The kinds an App may use, and the plan feature being listed needs, are the publisher's settings.
+ * The kinds an App may use, and the plan feature being listed as each needs (one for all of them,
+ * or a rule per kind), are the publisher's settings, and the platform applies them: the kind you
+ * pass is the kind whose rule counts.
  */
 export class Listings {
   constructor(private readonly http: Http) {}
