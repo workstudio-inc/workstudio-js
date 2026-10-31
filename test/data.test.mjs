@@ -169,6 +169,58 @@ describe('ranges, lists, sorts and cursors', () => {
   });
 });
 
+describe('writes that check first', () => {
+  const NOTES = `${API}/api/v1/workflow/data/collections/notes/records`;
+  const AT = '2026-10-31T10:00:00.123456Z';
+
+  it('asks for a key only if it is free', async () => {
+    const { app, calls } = client([{ body: { id: '1', data: {} } }]);
+    await app.data.collection('notes').create({ title: 'x' }, { key: 'k', ifAbsent: true });
+    assert.deepEqual(calls[0].body, { record: { title: 'x' }, key: 'k', ifAbsent: true });
+  });
+
+  it('says a key is taken', async () => {
+    const { app } = client([{ status: 409, body: { error: 'A record with the key already exists', code: 'RECORD_EXISTS' } }]);
+    await assert.rejects(app.data.collection('notes').create({}, { key: 'k', ifAbsent: true }), e => e.status === 409 && e.code === 'RECORD_EXISTS');
+  });
+
+  it('refuses ifAbsent with no key rather than making a duplicate', async () => {
+    const { app, calls } = client();
+    await assert.rejects(app.data.collection('notes').create({}, { ifAbsent: true }), /needs a `key`/);
+    assert.equal(calls.length, 0);
+  });
+
+  it('replaces only if unchanged, sending the version it was told', async () => {
+    const { app, calls } = client([{ body: { id: '1', data: {} } }]);
+    await app.data.collection('notes').replace('1', { title: 'x' }, { ifUpdatedAt: AT });
+    assert.deepEqual(calls[0].body, { record: { title: 'x' }, ifUpdatedAt: AT });
+  });
+
+  it('update can guard its own read', async () => {
+    const { app, calls } = client([{ body: { id: '1', data: { title: 'x' }, updatedAt: AT } }, { body: { id: '1', data: {} } }]);
+    await app.data.collection('notes').update('1', { status: 'done' }, { ifUnchanged: true });
+    assert.deepEqual(calls[1].body, { record: { title: 'x', status: 'done' }, ifUpdatedAt: AT });
+  });
+
+  it('says a record changed, and what it is at now', async () => {
+    const { app } = client([{ status: 409, body: { error: 'This record has changed since it was read', code: 'RECORD_CHANGED', currentUpdatedAt: AT } }]);
+    await assert.rejects(app.data.collection('notes').replace('1', {}, { ifUpdatedAt: AT }),
+      e => e.code === 'RECORD_CHANGED' && e.details.currentUpdatedAt === AT);
+  });
+
+  it('sends what it always sent when asked for neither', async () => {
+    const { app, calls } = client([{ body: { id: '1', data: {} } }, { body: { id: '1', data: { a: 1 }, updatedAt: AT } }, { body: { id: '1', data: {} } }, { body: { id: '1', data: {} } }]);
+    const notes = app.data.collection('notes');
+    await notes.create({ a: 1 }, { key: 'k' });
+    await notes.update('1', { b: 2 });
+    await notes.replace('1', { c: 3 });
+    assert.deepEqual(calls[0].body, { record: { a: 1 }, key: 'k' });
+    assert.deepEqual(calls[2].body, { record: { a: 1, b: 2 } });
+    assert.deepEqual(calls[3].body, { record: { c: 3 } });
+    assert.equal(calls[3].url, `${NOTES}/1`);
+  });
+});
+
 describe('the declared collections', () => {
   it('say which one the members share', async () => {
     const { app, calls } = client([{ body: [{ name: 'records', shared: 'members' }, { name: 'notes' }] }]);

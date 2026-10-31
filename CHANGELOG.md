@@ -14,6 +14,9 @@ file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is
   `createdAt` and `updatedAt`.
 - `sort: { by, ascending }` sorts by the field's declared type, so numbers sort as numbers. `sortBy` still sorts as text.
 - `after`, and `nextCursor` on `findPage`: pages by cursor, stable while records are added.
+- `create(data, { key, ifAbsent: true })` refuses a key already in use (`RECORD_EXISTS`).
+- `replace(id, data, { ifUpdatedAt })` and `update(id, changes, { ifUnchanged: true })` refuse a record that changed
+  since it was read (`RECORD_CHANGED`).
 
 ## 0.16.0 - 2026-10-31
 

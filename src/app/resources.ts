@@ -350,21 +350,36 @@ export class Collection<T = Record<string, unknown>> {
     }
   }
 
-  /** Save a new record; with `key`, the record with that key is replaced instead of duplicated. */
-  async create(data: T, options: { key?: string } = {}): Promise<DataRecord<T>> {
-    return authored(await this.http.request<DataRecord<T>>('POST', this.url(), { record: data, ...(options.key ? { key: options.key } : {}) }));
+  /**
+   * Save a new record; with `key`, the record with that key is replaced instead of duplicated. With `ifAbsent` as well,
+   * a key already in use is refused with `RECORD_EXISTS` and that record is left alone: of two racing, one wins.
+   */
+  async create(data: T, options: { key?: string; ifAbsent?: boolean } = {}): Promise<DataRecord<T>> {
+    if (options.ifAbsent && !options.key) throw new AppError(400, '`ifAbsent` needs a `key`.');
+    return authored(await this.http.request<DataRecord<T>>('POST', this.url(), {
+      record: data, ...(options.key ? { key: options.key } : {}), ...(options.ifAbsent ? { ifAbsent: true } : {}),
+    }));
   }
 
-  /** Change some of a record's fields; the rest are kept. */
-  async update(id: string, changes: Partial<T>): Promise<DataRecord<T>> {
+  /**
+   * Change some of a record's fields; the rest are kept. With `ifUnchanged`, a record someone changed between the read
+   * and the write is refused with `RECORD_CHANGED`, rather than their change being lost.
+   */
+  async update(id: string, changes: Partial<T>, options: { ifUnchanged?: boolean } = {}): Promise<DataRecord<T>> {
     const current = await this.get(id);
     if (!current) throw new AppError(404, 'That record could not be found.');
-    return this.replace(id, { ...(current.data as T), ...changes });
+    const next = { ...(current.data as T), ...changes };
+    return options.ifUnchanged ? this.replace(id, next, { ifUpdatedAt: current.updatedAt }) : this.replace(id, next);
   }
 
-  /** Replace a record's fields with these. */
-  async replace(id: string, data: T): Promise<DataRecord<T>> {
-    return authored(await this.http.request<DataRecord<T>>('PUT', this.url(`/${encodeURIComponent(id)}`), { record: data }));
+  /**
+   * Replace a record's fields with these. With `ifUpdatedAt`, the `updatedAt` it was read with, a record that has
+   * changed since is refused with `RECORD_CHANGED`.
+   */
+  async replace(id: string, data: T, options: { ifUpdatedAt?: string } = {}): Promise<DataRecord<T>> {
+    return authored(await this.http.request<DataRecord<T>>('PUT', this.url(`/${encodeURIComponent(id)}`), {
+      record: data, ...(options.ifUpdatedAt ? { ifUpdatedAt: options.ifUpdatedAt } : {}),
+    }));
   }
 
   async delete(id: string): Promise<boolean> {
