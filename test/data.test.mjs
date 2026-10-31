@@ -71,6 +71,44 @@ describe('a collection of each person\'s own records', () => {
   });
 });
 
+describe('findPage', () => {
+  const NOTES = `${API}/api/v1/workflow/data/collections/notes/records`;
+
+  it('says how many match across every page, with the same query find sends', async () => {
+    const own = { id: '3', data: { title: 'Mine' } };
+    const { app, calls } = client([{ body: { records: [own], total: 42 } }, { body: { records: [own], total: 42 } }]);
+    const notes = app.data.collection('notes');
+    const options = { where: { stage: 'new' }, limit: 1, offset: 20, sortBy: 'title', ascending: true };
+
+    const page = await notes.findPage(options);
+    assert.deepEqual(page, { records: [own], total: 42 });
+    await notes.find(options);
+    assert.equal(calls[0].url, `${NOTES}?stage=new&limit=1&offset=20&sortBy=title&ascending=true`);
+    assert.equal(calls[0].url, calls[1].url);
+  });
+
+  it('reads a total of zero as zero, on an empty page', async () => {
+    const { app } = client([{ body: { records: [], total: 0 } }]);
+    assert.deepEqual(await app.data.collection('notes').findPage(), { records: [], total: 0 });
+  });
+
+  it('does not make a total up when the platform sends none', async () => {
+    const { app } = client([{ body: [{ id: '3', data: {} }] }]);
+    assert.equal((await app.data.collection('notes').findPage()).total, null);
+  });
+
+  it('says who made a shared record, as find does', async () => {
+    const { app } = client([{ body: { records: [shared('1', { title: 'x' }, { createdBy: ALICE })], total: 1 } }]);
+    assert.equal((await app.data.collection('records').findPage()).records[0].createdBy, ALICE);
+  });
+
+  it('leaves find as it was: the records, and no total', async () => {
+    const own = { id: '3', data: { title: 'Mine' } };
+    const { app } = client([{ body: { records: [own], total: 42 } }]);
+    assert.deepEqual(await app.data.collection('notes').find(), [own]);
+  });
+});
+
 describe('the declared collections', () => {
   it('say which one the members share', async () => {
     const { app, calls } = client([{ body: [{ name: 'records', shared: 'members' }, { name: 'notes' }] }]);

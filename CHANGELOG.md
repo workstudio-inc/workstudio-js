@@ -4,6 +4,12 @@
 file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is in
 `RELEASE-NOTES-sdk-contract-fixes.md`.
 
+## Unreleased
+
+### Added
+- `Collection.findPage(options)`: one page of records and `total`, how many match across every page. Takes the same
+  options as `find`, which is unchanged.
+
 ## 0.16.0 - 2026-10-31
 
 ### Added

@@ -254,6 +254,13 @@ export interface FindOptions {
   ascending?: boolean;
 }
 
+/** One page of `findPage`. */
+export interface FindPage<T = Record<string, unknown>> {
+  records: DataRecord<T>[];
+  /** How many records match, across every page. Null when the platform did not say. */
+  total: number | null;
+}
+
 /**
  * One of the collections the App declares. The person reads and writes only their own records - unless the App is
  * for its organisation's members (`signIn.audience: members`) and shares the collection (`shared: members`): then every
@@ -267,16 +274,26 @@ export class Collection<T = Record<string, unknown>> {
     return `${this.http.config.dataUrl}/api/v1/workflow/data/collections/${encodeURIComponent(this.name)}/records${suffix}`;
   }
 
-  async find(options: FindOptions = {}): Promise<DataRecord<T>[]> {
+  private async read(options: FindOptions): Promise<FindPage<T>> {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(options.where ?? {})) q.set(k, String(v));
     if (options.limit !== undefined) q.set('limit', String(options.limit));
     if (options.offset !== undefined) q.set('offset', String(options.offset));
     if (options.sortBy) q.set('sortBy', options.sortBy);
     if (options.ascending !== undefined) q.set('ascending', String(options.ascending));
-    const body = await this.http.request<{ records?: DataRecord<T>[]; items?: DataRecord<T>[] } | DataRecord<T>[]>(
+    const body = await this.http.request<{ records?: DataRecord<T>[]; items?: DataRecord<T>[]; total?: number } | DataRecord<T>[]>(
       'GET', this.url(q.toString() ? `?${q}` : ''));
-    return (Array.isArray(body) ? body : body?.records ?? body?.items ?? []).map(r => authored(r));
+    const records = (Array.isArray(body) ? body : body?.records ?? body?.items ?? []).map(r => authored(r));
+    return { records, total: !Array.isArray(body) && typeof body?.total === 'number' ? body.total : null };
+  }
+
+  async find(options: FindOptions = {}): Promise<DataRecord<T>[]> {
+    return (await this.read(options)).records;
+  }
+
+  /** One page of records, and how many match across all pages. Takes the same options as `find`. */
+  findPage(options: FindOptions = {}): Promise<FindPage<T>> {
+    return this.read(options);
   }
 
   /** One record, or null when the person has no such record. */
