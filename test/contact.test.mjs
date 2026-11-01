@@ -356,6 +356,26 @@ describe('app.contactForm on a custom domain (challenge frame)', () => {
   });
 });
 
+describe('app.contactForm messages', () => {
+  afterEach(() => removePage());
+
+  it('CHECK_NEEDS_HTTPS says the page must be on https', () => {
+    installPage('http://app.acme.com/contact');
+    assert.throws(() => client().app.contactForm.mount(new FakeElement('div')),
+      (e) => e instanceof AppError && e.code === 'CHECK_NEEDS_HTTPS'
+        && e.message === 'The contact form check needs the page on https.');
+  });
+
+  it('CHECK_UNAVAILABLE in frame mode says to try again later', async () => {
+    installPage('https://app.acme.com/contact');
+    const check = client().app.contactForm.mount(new FakeElement('div'), { readyTimeoutMs: 10 });
+    assert.equal(check.mode, 'frame');
+    await assert.rejects(check.ready,
+      (e) => e instanceof AppError && e.code === 'CHECK_UNAVAILABLE' && e.message === 'The check did not load. Try again later.');
+    check.unmount();
+  });
+});
+
 describe('app.contactForm on workstudio.run (the widget on the page)', () => {
   beforeEach(() => installPage('https://shop.workstudio.run/contact'));
   afterEach(() => removePage());

@@ -149,7 +149,7 @@ export class ContactForm {
     if (mode === 'frame') {
       origin = typeof location !== 'undefined' ? location.origin : '';
       if (!/^https:\/\/[^/]+$/.test(origin)) {
-        throw new AppError(0, 'The contact form check on an App\'s own domain needs the page on https.', 'CHECK_NEEDS_HTTPS');
+        throw new AppError(0, 'The contact form check needs the page on https.', 'CHECK_NEEDS_HTTPS');
       }
     }
     return new ContactCheck(this, container, { ...options, mode, theme, size, siteKey }, appId, origin);
@@ -229,7 +229,7 @@ export class ContactCheck {
     const wait = options.readyTimeoutMs ?? 20_000;
     this.readyTimer = setTimeout(() => this.unavailable(
       this.mode === 'frame'
-        ? 'The check did not load. On the App\'s own domain it needs the domain live for this App on work.studio.'
+        ? 'The check did not load. Try again later.'
         : 'The check did not load. The page\'s Content-Security-Policy must allow https://challenges.cloudflare.com.'), wait);
     if (this.mode === 'frame') this.mountFrame(container, origin);
     else this.mountWidget(container);
