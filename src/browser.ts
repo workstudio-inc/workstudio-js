@@ -81,9 +81,24 @@ export function openOAuthPopup(
 }
 
 /**
+ * This page's origin, for the OAuth callback: `window.location.origin` in a browser; `undefined` outside one (Node,
+ * SSR) and for an opaque origin (`"null"`: a `file://` page or a sandboxed iframe), which no popup can post to.
+ */
+function pageOrigin(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const origin = window.location?.origin;
+  return typeof origin === 'string' && origin !== '' && origin !== 'null' ? origin : undefined;
+}
+
+/**
  * One-call connect for a connector: initiate OAuth, open the popup, wait for completion, attach the connection the
  * popup reports to the activation's connector (`bindConnection`), then return the refreshed activation. Ideal for a
  * "Connect" button.
+ *
+ * `callbackOrigin` defaults to this page's origin (`window.location.origin`); a value you pass (or the deprecated
+ * `redirectUri`) wins, and an opaque origin sends none. For a customer site that origin must be in the tenant's
+ * Embed settings (allowed origins) and on the platform's OAuth callback allow-list, or the call is refused (400
+ * `CALLBACK_ORIGIN_NOT_ALLOWED`).
  *
  * When no result reaches this page - the person closed the popup, the flow failed, or this page's origin is not the
  * flow's callback origin (see {@link CONNECTION_STATUS_MESSAGE}) - it returns the activation as it stands, its
@@ -101,7 +116,7 @@ export async function connectConnector(
   options?: InitiateOAuthOptions & OpenOAuthPopupOptions,
 ): Promise<Activation> {
   const init = await client.initiateOAuth(activationId, connectorGlobalId, {
-    callbackOrigin: options?.callbackOrigin,
+    callbackOrigin: options?.callbackOrigin ?? (options?.redirectUri ? undefined : pageOrigin()),
     redirectUri: options?.redirectUri,
     state: options?.state,
     variables: options?.variables,

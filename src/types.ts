@@ -166,7 +166,8 @@ export interface InitiateOAuthOptions {
   /**
    * The origin (`https://app.example.com` - scheme, host, port; no path) the OAuth popup reports its result to with
    * `postMessage`. It must be on the platform's callback allow-list, or the call is refused (400
-   * `CALLBACK_ORIGIN_NOT_ALLOWED`); leave it out to use the platform's default.
+   * `CALLBACK_ORIGIN_NOT_ALLOWED`). The platform requires one: `connectConnector` (`@workstudio-inc/sdk/browser`)
+   * defaults it to the page's origin; a direct `initiateOAuth` call must pass it.
    */
   callbackOrigin?: string;
   /**

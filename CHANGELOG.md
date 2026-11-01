@@ -4,6 +4,14 @@
 file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is in
 `RELEASE-NOTES-sdk-contract-fixes.md`.
 
+## Unreleased
+
+### Changed
+- `connectConnector` (`@workstudio-inc/sdk/browser`) defaults `callbackOrigin` to the page's origin
+  (`window.location.origin`) when none is passed. The platform refuses an OAuth initiate without one, so a page that
+  left it out could not connect. A value you pass (or `redirectUri`) still wins; an opaque origin (`file://`, a
+  sandboxed iframe) and non-browser use send none, as before.
+
 ## 0.16.0 - 2026-10-31
 
 ### Added

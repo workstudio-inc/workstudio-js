@@ -125,8 +125,11 @@ describe('browser OAuth popup contract (connection MultiTenantSuccessHandler)', 
     else delete globalThis.window;
   });
 
-  /** A window whose popup posts `message` (as the connection service's success page does) once opened. */
-  function fakeWindow(message, { fromPopup = true } = {}) {
+  /**
+   * A window whose popup posts `message` (as the connection service's success page does) once opened. `origin`, when
+   * given, is the page's `location.origin`.
+   */
+  function fakeWindow(message, { fromPopup = true, origin } = {}) {
     const listeners = new Set();
     const popup = { closed: false };
     const win = {
@@ -139,6 +142,7 @@ describe('browser OAuth popup contract (connection MultiTenantSuccessHandler)', 
       },
       addEventListener: (t, l) => t === 'message' && listeners.add(l),
       removeEventListener: (t, l) => t === 'message' && listeners.delete(l),
+      ...(origin === undefined ? {} : { location: { origin } }),
     };
     Object.defineProperty(globalThis, 'window', { value: win, configurable: true, writable: true });
   }
@@ -179,5 +183,55 @@ describe('browser OAuth popup contract (connection MultiTenantSuccessHandler)', 
     assert.equal(calls[1].method, 'GET');
     assert.equal(calls[1].url, `${ROOT}/activations/b7a1`);
     assert.equal(a.status, 'pending');
+  });
+
+  // connection OAuthInitiateRequest: callbackOrigin is @NotNull (and refused when blank), and catalog
+  // IntegrationEmbedService#initiateOAuth forwards the SDK's redirectUri field as it.
+  const INIT = { authorizationUrl: 'https://login.example/authorize', state: 's', connectorGlobalId: '5e2f', connectorName: 'ServiceNow' };
+  const initRoute = url => (url.endsWith('/initiate') ? INIT : ACTIVATION);
+
+  it('connectConnector sends the page origin as the callback origin when none is passed', async () => {
+    fakeWindow(SUCCESS, { origin: 'https://app.example.test' });
+    const { client, calls } = clientWith(initRoute);
+    await connectConnector(client, 'b7a1', '5e2f');
+    assert.equal(calls[0].url, `${ROOT}/activations/b7a1/oauth/5e2f/initiate`);
+    assert.equal(calls[0].body.redirectUri, 'https://app.example.test');
+  });
+
+  it('connectConnector sends an explicit callbackOrigin over the page origin', async () => {
+    fakeWindow(SUCCESS, { origin: 'https://app.example.test' });
+    const { client, calls } = clientWith(initRoute);
+    await connectConnector(client, 'b7a1', '5e2f', { callbackOrigin: 'https://shell.example.test' });
+    assert.equal(calls[0].body.redirectUri, 'https://shell.example.test');
+  });
+
+  it('connectConnector sends an explicit (deprecated) redirectUri over the page origin', async () => {
+    fakeWindow(SUCCESS, { origin: 'https://app.example.test' });
+    const { client, calls } = clientWith(initRoute);
+    await connectConnector(client, 'b7a1', '5e2f', { redirectUri: 'https://shell.example.test/oauth/done' });
+    assert.equal(calls[0].body.redirectUri, 'https://shell.example.test');
+  });
+
+  it('connectConnector sends no callback origin from an opaque origin ("null")', async () => {
+    fakeWindow(SUCCESS, { origin: 'null' });
+    const { client, calls } = clientWith(initRoute);
+    await connectConnector(client, 'b7a1', '5e2f');
+    assert.equal('redirectUri' in calls[0].body, false);
+  });
+
+  it('connectConnector sends no callback origin from a window without a location', async () => {
+    fakeWindow(SUCCESS);
+    const { client, calls } = clientWith(initRoute);
+    await connectConnector(client, 'b7a1', '5e2f');
+    assert.equal('redirectUri' in calls[0].body, false);
+  });
+
+  it('connectConnector outside a browser is unchanged: no callback origin, then the popup cannot open', async () => {
+    delete globalThis.window;
+    assert.equal(typeof globalThis.window, 'undefined');
+    const { client, calls } = clientWith(initRoute);
+    await assert.rejects(connectConnector(client, 'b7a1', '5e2f'), ReferenceError);
+    assert.equal(calls.length, 1);
+    assert.equal('redirectUri' in calls[0].body, false);
   });
 });
