@@ -168,3 +168,14 @@ test('the deletion check carries the unused bought credits', async () => {
   const check = await app.account.deletionCheck();
   assert.deepEqual(check.credits, { bought: 340, name: 'credits' });
 });
+
+test('a starter brought to a paid plan is read with the balance, and absent from an older server', async () => {
+  const moved = { ...BALANCE, available: 1027, monthly: { left: 1000, total: 1000, period: 'month', resetsOn: '2026-12-01' },
+    bought: { left: 0 }, starter: { left: 27 } };
+  const c = await appWith(() => moved).app.credits.balance();
+  assert.equal(c.available, 1027);
+  assert.equal(c.monthly.total, 1000);
+  assert.deepEqual(c.starter, { left: 27 });
+  const old = await appWith(() => BALANCE).app.credits.balance();
+  assert.equal('starter' in old, false);
+});

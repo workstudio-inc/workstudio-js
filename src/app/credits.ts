@@ -10,16 +10,22 @@ export interface CreditUnit {
 
 /**
  * The person's credits in the App - one balance every action draws on. Whole numbers, never below 0, never money.
- * The plan's monthly credits are spent first, then credits they bought, which never expire.
+ * The plan's monthly credits are spent first, then what is left of a starter brought from a one-time plan, then credits
+ * they bought, which never expire.
  */
 export interface CreditBalance {
   unit: CreditUnit;
-  /** What they can use now: `monthly.left + bought.left`. */
+  /** What they can use now: `monthly.left + starter.left + bought.left`. */
   available: number;
   /** The plan's credits: `period` `month` (they start again on `resetsOn`) or `once` (starter credits). Nulls: no limit. */
   monthly: { left: number | null; total: number | null; period: 'month' | 'once'; resetsOn: string | null };
   /** Credits they bought and have not used. */
   bought: { left: number };
+  /**
+   * What is left of the starter credits they had when they moved to a paid plan. Never expires; 0 on the one-time plan
+   * itself, where `monthly` is the starter. Absent from older servers.
+   */
+  starter?: { left: number };
   /** `low` below `lowAt`; `empty` at 0. */
   state: 'ok' | 'low' | 'empty';
   lowAt?: number | null;
@@ -257,6 +263,7 @@ export function read(raw: Record<string, unknown> | null | undefined): CreditBal
   const unit = (raw.unit ?? {}) as Record<string, unknown>;
   const m = (raw.monthly ?? {}) as Record<string, unknown>;
   const b = (raw.bought ?? {}) as Record<string, unknown>;
+  const s = raw.starter as Record<string, unknown> | null | undefined;
   const available = whole(raw.available);
   const state = raw.state === 'low' || raw.state === 'empty' || raw.state === 'ok' ? raw.state : available === 0 ? 'empty' : 'ok';
   return {
@@ -269,6 +276,7 @@ export function read(raw: Record<string, unknown> | null | undefined): CreditBal
       resetsOn: typeof m.resetsOn === 'string' ? m.resetsOn : null,
     },
     bought: { left: whole(b.left) },
+    ...(s && typeof s === 'object' ? { starter: { left: whole(s.left) } } : {}),
     state,
     lowAt: num(raw.lowAt),
     whenEmpty: (raw.whenEmpty as CreditBalance['whenEmpty']) ?? null,
