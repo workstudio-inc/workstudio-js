@@ -154,9 +154,8 @@ async function onConnectClick(activationId: string, connectorGlobalId: string) {
 ```
 
 `callbackOrigin` defaults to the page's origin (`window.location.origin`); pass `{ callbackOrigin }` to override
-it. On a customer site, that origin must be in the tenant's Embed settings (allowed origins) and on the platform's
-OAuth callback allow-list, or the call is refused (400 `CALLBACK_ORIGIN_NOT_ALLOWED`). A `file://` page or sandboxed
-iframe has no usable origin and sends none.
+it. For a site outside work.studio, register that origin in your Embed settings (allowed origins), or the call is
+refused (400 `CALLBACK_ORIGIN_NOT_ALLOWED`). A `file://` page or sandboxed iframe has no usable origin and sends none.
 
 The popup reports its result with `postMessage` (`{ type: 'connectionStatus', payload, connectionInstanceId }`)
 only to the flow's callback origin - `callbackOrigin`, which must be on the platform's allow-list - or the

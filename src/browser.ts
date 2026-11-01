@@ -96,9 +96,8 @@ function pageOrigin(): string | undefined {
  * "Connect" button.
  *
  * `callbackOrigin` defaults to this page's origin (`window.location.origin`); a value you pass (or the deprecated
- * `redirectUri`) wins, and an opaque origin sends none. For a customer site that origin must be in the tenant's
- * Embed settings (allowed origins) and on the platform's OAuth callback allow-list, or the call is refused (400
- * `CALLBACK_ORIGIN_NOT_ALLOWED`).
+ * `redirectUri`) wins, and an opaque origin sends none. For a site outside work.studio, register that origin in your
+ * Embed settings (allowed origins), or the call is refused (400 `CALLBACK_ORIGIN_NOT_ALLOWED`).
  *
  * When no result reaches this page - the person closed the popup, the flow failed, or this page's origin is not the
  * flow's callback origin (see {@link CONNECTION_STATUS_MESSAGE}) - it returns the activation as it stands, its

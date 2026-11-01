@@ -10,7 +10,8 @@ file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is
 - `connectConnector` (`@workstudio-inc/sdk/browser`) defaults `callbackOrigin` to the page's origin
   (`window.location.origin`) when none is passed. The platform refuses an OAuth initiate without one, so a page that
   left it out could not connect. A value you pass (or `redirectUri`) still wins; an opaque origin (`file://`, a
-  sandboxed iframe) and non-browser use send none, as before.
+  sandboxed iframe) and non-browser use send none, as before. For a site outside work.studio, register that origin
+  in your Embed settings (allowed origins).
 
 ## 0.16.0 - 2026-10-31
 
