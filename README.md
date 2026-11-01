@@ -744,26 +744,19 @@ document.querySelector('#contact')!.addEventListener('submit', async (ev) => {
 check.unmount();
 ```
 
-**Where the check runs.** `mount` picks it from the page's address:
-- On **`<slug>.workstudio.run`** it renders the platform's "App contact forms" widget on the page itself
-  (`mode: 'widget'`). It loads Cloudflare's script from `https://challenges.cloudflare.com`, which the default
-  hosting CSP allows. If you set your own `csp`, allow that origin in `script-src` and `frame-src`.
-- On **the App's own domain** (`app.acme.com`) it embeds the platform's challenge frame,
-  `https://challenge.workstudio.run/turnstile`, in the page (`mode: 'frame'`). The domain must be live for this App,
-  and the page must be on https. The frame passes the token back with `postMessage`. The SDK reads a message only when
-  `event.origin` is exactly `https://challenge.workstudio.run`, it comes from this mount's own iframe, it has the v1
-  shape, and it names this App, the contact form's action and this mount's random nonce. Everything else is ignored.
-  If you set your own `csp`, allow `https://challenge.workstudio.run` in `frame-src`.
+**Where the check runs.** On **`<slug>.workstudio.run`** `mount` renders the platform's "App contact forms" widget
+on the page itself (`mode: 'widget'`). It loads Cloudflare's script from `https://challenges.cloudflare.com`, which
+the default hosting CSP allows. If you set your own `csp`, allow that origin in `script-src` and `frame-src`.
 
 **Using it.**
 - **A token works for one message.** `check.send` uses it and then runs the check again, whether the message was
   accepted or not. `check.token` is the token ready now, `check.waitForToken()` waits for the next one,
   `check.reset()` runs the check again, and `check.ready` settles once the check is on the page.
 - **Mount errors.** `mount` throws `AppError` at once with `NO_APP_ID`, `CHECK_NEEDS_BROWSER`, `CHECK_NEEDS_HTTPS`
-  (frame mode off https) or `BAD_OPTION`.
+  or `BAD_OPTION`.
 - **Errors later on.**
-  - `CHECK_UNAVAILABLE`: the check did not appear within `readyTimeoutMs` (20 s). Typical causes are a domain that is
-    not live, or a CSP that blocks it.
+  - `CHECK_UNAVAILABLE`: the check did not appear within `readyTimeoutMs` (20 s). A typical cause is a CSP that blocks
+    it.
   - `CHECK_ERROR`: Turnstile's own code is in `details.turnstileCode`.
   - `CHECK_TIMEOUT`: no token arrived in time.
   - `CHECK_UNMOUNTED`: a wait that was pending when the check was unmounted.
@@ -776,19 +769,18 @@ check.unmount();
   - 413: `TOO_LARGE`.
   - 429: `RATE_LIMITED`.
   - 503: `CAPTCHA_UNAVAILABLE` or `RATE_LIMIT_UNAVAILABLE`. Try again later.
-- **Unmount** removes the frame or widget and its message listener, and fails any pending wait.
+- **Unmount** removes the widget and its message listener, and fails any pending wait.
 - **Context.** Each message also sends the page's origin and path (never its query or hash) and the browser's user
   agent as `context`. Pass `context: null` to send neither.
 - **Your own widget.** `app.contactForm.send(message, turnstileToken)` sends a token you got yourself. Render the
   widget with action `app-contact`, on a host the widget lists.
-- **Local development.** `localhost` is neither a workstudio.run host nor a live custom domain. Use
+- **Local development.** `localhost` is not a workstudio.run host. Use
   `mount(el, { mode: 'widget', siteKey: '1x00000000000000000000AA' })` (Cloudflare's always-pass test key) against a
   platform that runs with Cloudflare's test secret.
 - **Phone apps in a web view** (`capacitor://localhost`, `https://localhost`) cannot run Turnstile, so ask a
   signed-out person to sign in instead.
 
-**No `app.primaryUrl`.** The SDK does not read the App's settings. An App's primary address (its primary custom
-domain, else `https://<slug>.workstudio.run`) is known only to the platform's own services, and no public App-info
+**No `app.primaryUrl`.** The SDK does not read the App's settings. An App's primary address is known only to the platform's own services, and no public App-info
 endpoint carries it. The contact form doesn't need it: the check and the platform both work from the page's own
 origin. To link to the App from inside it, use `location.origin`.
 
