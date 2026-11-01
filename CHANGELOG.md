@@ -4,6 +4,20 @@
 file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is in
 `RELEASE-NOTES-sdk-contract-fixes.md`.
 
+## 0.17.0 - 2026-11-01
+
+### Added
+- `app.contactForm` (`ContactForm`, `ContactCheck`, and the types `ContactMessage`, `ContactReceipt`,
+  `ContactCheckOptions`, `ContactSendOptions`, `ContactCategory`, `ContactCheckMode`, `ContactCheckTheme`,
+  `ContactCheckSize`): the App's public contact form for visitors who have not signed in. `mount(el)` renders the
+  Cloudflare Turnstile check and `send(message)` posts it to `POST /api/v1/public/apps/{appId}/contact`, where it
+  becomes a ticket in the App's support inbox. Needs `appId` in the config. On `<slug>.workstudio.run` the check is
+  the widget on the page (`mode: 'widget'`); anywhere else it is the platform's challenge frame
+  (`mode: 'frame'`). `app.contactForm.send(message, token)` takes a token from your own widget. Errors are
+  `AppError`s with the platform's codes (`CAPTCHA_FAILED`, `FORBIDDEN_ORIGIN`, `RATE_LIMITED`, ...) and the SDK's own
+  (`CHECK_UNAVAILABLE`, `CHECK_TIMEOUT`, `INVALID_MESSAGE`, ...). See the README, "Contact form".
+- Exported constants `CHALLENGE_ORIGIN`, `PLATFORM_APP_DOMAIN`, `APP_CONTACT_SITE_KEY`, `TURNSTILE_SCRIPT`.
+
 ## 0.16.0 - 2026-10-31
 
 ### Added
