@@ -36,7 +36,7 @@
  *             contact - which its automations email or push as the App
  *   notifications  which of the App's emails the person gets
  *   contactForm  the App's public contact form, for visitors who have not signed in: the Turnstile check
- *             (on the page on *.workstudio.run, in the platform's challenge frame on the App's own domain)
+ *             (on the page on *.workstudio.run)
  *             and the message, which becomes a ticket in the publisher's support inbox
  *
  * Isolation is the platform's, not the App's: every call carries the person's token, and the person

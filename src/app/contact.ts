@@ -10,13 +10,8 @@ import type { Http } from './http';
  *
  * - On `<slug>.workstudio.run` the platform's "App contact forms" widget is rendered on the page itself
  *   (`mode: 'widget'`). The platform checks that the token was solved on the host the message comes from.
- * - On the App's own domain (`app.acme.com`) the widget cannot list every customer's hostname, so the check runs in
- *   the platform's challenge frame, `https://challenge.workstudio.run/turnstile`, embedded in the page
- *   (`mode: 'frame'`). The frame hands the token back by `postMessage`; the platform accepts it only for this App
- *   (`cdata`), this form (`action`) and a message from one of the App's own https sites.
  */
 
-/** The platform's challenge frame. A message from any other origin is never read. */
 export const CHALLENGE_ORIGIN = 'https://challenge.workstudio.run';
 /** The platform's own App hosts: `<slug>.workstudio.run` renders the widget on the page. */
 export const PLATFORM_APP_DOMAIN = 'workstudio.run';
@@ -69,20 +64,18 @@ export interface ContactReceipt {
   message?: string;
 }
 
-/** `frame`: the platform's challenge frame (the App's own domain). `widget`: the widget on the page (workstudio.run). */
+/** `widget`: the widget on the page (workstudio.run). */
 export type ContactCheckMode = 'frame' | 'widget';
 export type ContactCheckTheme = 'auto' | 'light' | 'dark';
 export type ContactCheckSize = 'normal' | 'flexible' | 'compact';
 
 export interface ContactCheckOptions {
-  /** Defaults to `auto`: `widget` on `*.workstudio.run`, `frame` anywhere else. */
   mode?: 'auto' | ContactCheckMode;
   theme?: ContactCheckTheme;
   size?: ContactCheckSize;
   /**
    * Widget mode only: another site key - Cloudflare's test key `1x00000000000000000000AA` for local development, say
-   * (the platform then needs its test secret too). Defaults to {@link APP_CONTACT_SITE_KEY}. The frame always uses
-   * the platform's.
+   * (the platform then needs its test secret too). Defaults to {@link APP_CONTACT_SITE_KEY}.
    */
   siteKey?: string;
   /** How long the check may take to appear before `ready` fails with `CHECK_UNAVAILABLE`. Default 20 s. */
@@ -126,7 +119,6 @@ interface TurnstileApi {
 export class ContactForm {
   constructor(private readonly http: Http) {}
 
-  /** Which check {@link mount} uses on `host` (default: this page's): `widget` on `*.workstudio.run`, else `frame`. */
   modeFor(host?: string): ContactCheckMode {
     const h = (host ?? (typeof location !== 'undefined' ? location.hostname : '')).toLowerCase().replace(/\.$/, '');
     return h === PLATFORM_APP_DOMAIN || h.endsWith(`.${PLATFORM_APP_DOMAIN}`) ? 'widget' : 'frame';
@@ -134,7 +126,7 @@ export class ContactForm {
 
   /**
    * Render the Turnstile check into `container` and keep its token. Throws `AppError` at once for what cannot work:
-   * `NO_APP_ID`, `CHECK_NEEDS_BROWSER` (no page), `CHECK_NEEDS_HTTPS` (frame mode off https), `BAD_OPTION`. What goes
+   * `NO_APP_ID`, `CHECK_NEEDS_BROWSER` (no page), `CHECK_NEEDS_HTTPS`, `BAD_OPTION`. What goes
    * wrong later arrives through `ready`, `onError` and `send`.
    */
   mount(container: HTMLElement, options: ContactCheckOptions = {}): ContactCheck {
@@ -217,7 +209,6 @@ export class ContactCheck {
   private lastError: AppError | null = null;
   private teardown: () => void = () => {};
   private resetter: () => void = () => {};
-  /** The nonce this mount sent the frame; every message must echo it. */
   private readonly nonce: string;
 
   constructor(
@@ -294,7 +285,7 @@ export class ContactCheck {
     this.resetter();
   }
 
-  /** Take the check off the page: the frame or widget is removed, its listener too, and pending waits fail `CHECK_UNMOUNTED`. */
+  /** Take the check off the page: the widget is removed, its listener too, and pending waits fail `CHECK_UNMOUNTED`. */
   unmount(): void {
     if (this.done) return;
     this.done = true;
@@ -404,10 +395,6 @@ export class ContactCheck {
     container.appendChild(iframe);
   }
 
-  /**
-   * A message from this mount's frame, or null. All of it must hold: the challenge origin exactly, sent by this
-   * iframe's window, the v1 shape, this App and form, and this mount's nonce. Anything else is ignored.
-   */
   private frameMessage(event: MessageEvent, iframe: HTMLIFrameElement): Record<string, unknown> | null {
     if (this.done || event.origin !== CHALLENGE_ORIGIN) return null;
     if (!iframe.contentWindow || event.source !== iframe.contentWindow) return null;
