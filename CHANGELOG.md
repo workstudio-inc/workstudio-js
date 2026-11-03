@@ -4,6 +4,13 @@
 file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is in
 `RELEASE-NOTES-sdk-contract-fixes.md`.
 
+## 0.17.0 - unreleased (train 7k; the version is provisional, set at intake)
+
+### Added
+- `@workstudio-inc/sdk/webhooks`: `verifyWebhook` checks an App event webhook's `X-Webhook-Signature` (HMAC-SHA256
+  over the timestamp and the raw body, constant-time compare) and refuses a timestamp outside the tolerance window
+  (5 minutes by default); the App event types and payload shapes are exported with it.
+
 ## 0.16.0 - 2026-10-31
 
 ### Added

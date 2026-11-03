@@ -10,6 +10,7 @@ export default defineConfig({
     index: 'src/index.ts',
     browser: 'src/browser.ts',
     app: 'src/app/index.ts',
+    webhooks: 'src/webhooks/index.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,
