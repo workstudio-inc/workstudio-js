@@ -6,13 +6,16 @@ export class AppError extends Error {
   readonly code?: string;
   /** The platform's answer as it came, when it was an object: any fields besides code and message. */
   readonly details?: Record<string, unknown>;
+  /** Seconds to wait before trying again, when the platform said so (`Retry-After`, mostly on a 429). */
+  readonly retryAfter?: number;
 
-  constructor(status: number, message: string, code?: string, details?: Record<string, unknown>) {
+  constructor(status: number, message: string, code?: string, details?: Record<string, unknown>, retryAfter?: number) {
     super(message);
     this.name = 'AppError';
     this.status = status;
     this.code = code;
     this.details = details;
+    if (retryAfter !== undefined) this.retryAfter = retryAfter;
     Object.setPrototypeOf(this, AppError.prototype);
   }
 }
