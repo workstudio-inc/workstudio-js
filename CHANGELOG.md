@@ -10,6 +10,9 @@ file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is
 - `@workstudio-inc/sdk/webhooks`: `verifyWebhook` checks an App event webhook's `X-Webhook-Signature` (HMAC-SHA256
   over the timestamp and the raw body, constant-time compare) and refuses a timestamp outside the tolerance window
   (5 minutes by default); the App event types and payload shapes are exported with it.
+- `createWebhookDeduper()`: handle each App event id once in one process (retries and replays carry the same id).
+- `verifyWebhook` refuses `toleranceSeconds` of 0 or less (or not a finite number) with a `RangeError`: the replay window
+  cannot be switched off.
 
 ## 0.16.0 - 2026-10-31
 

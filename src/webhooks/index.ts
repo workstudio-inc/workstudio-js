@@ -33,7 +33,10 @@ export class WebhookVerificationError extends Error {
 }
 
 export interface VerifyWebhookOptions {
-  /** How far the timestamp may be from now, either way. Default 300 seconds (5 minutes). */
+  /**
+   * How far the timestamp may be from now, either way. Default 300 seconds (5 minutes). Must be a finite number above 0:
+   * the replay window cannot be switched off, so 0, a negative number or NaN throws a `RangeError`.
+   */
   toleranceSeconds?: number;
   /** For tests: the current time in Unix seconds. */
   now?: () => number;
@@ -123,8 +126,11 @@ export async function verifyWebhook<T extends AppWebhookEvent = AppWebhookEvent>
     throw new WebhookVerificationError('BAD_TIMESTAMP', 'X-Webhook-Timestamp is not Unix seconds.');
   }
   const tolerance = options.toleranceSeconds ?? 300;
+  if (typeof tolerance !== 'number' || !Number.isFinite(tolerance) || tolerance <= 0) {
+    throw new RangeError('toleranceSeconds must be a finite number of seconds above 0 (the replay window cannot be off).');
+  }
   const now = options.now ? options.now() : Math.floor(Date.now() / 1000);
-  if (tolerance > 0 && Math.abs(now - Number(ts)) > tolerance) {
+  if (Math.abs(now - Number(ts)) > tolerance) {
     throw new WebhookVerificationError('STALE_TIMESTAMP', 'The request is older than ' + tolerance + ' seconds (or from the future).');
   }
   const bytes = bytesOf(rawBody);
@@ -165,5 +171,69 @@ export async function signWebhook(
   return {
     'X-Webhook-Timestamp': ts,
     'X-Webhook-Signature': 'sha256=' + (await hmacHex(secret, ts, bytesOf(rawBody))),
+  };
+}
+
+export interface WebhookDeduperOptions {
+  /**
+   * How long an event id is remembered. Default 90000 seconds (25 hours): longer than work.studio retries a delivery
+   * (24 hours), so a retry is never handled twice. A replay from the delivery log carries the same id too.
+   */
+  ttlSeconds?: number;
+  /** At most this many ids are kept (the oldest are forgotten first). Default 100000. */
+  maxEntries?: number;
+  /** For tests: the current time in Unix seconds. */
+  now?: () => number;
+}
+
+export interface WebhookDeduper {
+  /** True the first time this event id (or an event's `id`) is seen within the window; false for a retry or replay. */
+  firstTime(eventOrId: string | { id: string }): boolean;
+  /** How many ids are remembered now. */
+  size(): number;
+}
+
+/**
+ * Handle each App event once. Deliveries are at least once: a retry or a replay sends the same event again, with the same
+ * `X-Webhook-Id` (the event's `id`). This keeps the ids in memory, for one process; a receiver with several instances, or
+ * one that must survive a restart, should record the id in its own database under a unique key instead (see the README).
+ */
+export function createWebhookDeduper(options: WebhookDeduperOptions = {}): WebhookDeduper {
+  const ttl = options.ttlSeconds ?? 90_000;
+  const max = options.maxEntries ?? 100_000;
+  if (!Number.isFinite(ttl) || ttl <= 0) {
+    throw new RangeError('ttlSeconds must be a finite number above 0.');
+  }
+  if (!Number.isInteger(max) || max <= 0) {
+    throw new RangeError('maxEntries must be a whole number above 0.');
+  }
+  const clock = options.now ?? (() => Math.floor(Date.now() / 1000));
+  const seen = new Map<string, number>(); // id -> when it was first seen; insertion order = oldest first
+  return {
+    firstTime(eventOrId) {
+      const id = typeof eventOrId === 'string' ? eventOrId : eventOrId?.id;
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new TypeError('Pass the event, or its id (X-Webhook-Id).');
+      }
+      const now = clock();
+      for (const [key, at] of seen) {
+        if (now - at < ttl) break;
+        seen.delete(key);
+      }
+      const at = seen.get(id);
+      if (at !== undefined && now - at < ttl) {
+        return false;
+      }
+      seen.delete(id);
+      seen.set(id, now);
+      while (seen.size > max) {
+        const oldest = seen.keys().next().value as string;
+        seen.delete(oldest);
+      }
+      return true;
+    },
+    size() {
+      return seen.size;
+    },
   };
 }

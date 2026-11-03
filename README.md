@@ -724,7 +724,7 @@ import { verifyWebhook, WebhookVerificationError } from '@workstudio-inc/sdk/web
 app.post('/hooks/workstudio', express.raw({ type: 'application/json' }), async (req, res) => {
   try {
     const event = await verifyWebhook(req.body, req.headers, process.env.WORKSTUDIO_WEBHOOK_SECRET!);
-    if (await seen(event.id)) return res.sendStatus(200);      // at-least-once: de-duplicate by id
+    if (await seen(event.id)) return res.sendStatus(200);      // at-least-once: de-duplicate by id (below)
     switch (event.type) {
       case 'person.signed_up': await addContact(event.data.person.email); break;
       case 'person.deleted':   await forget(event.data.person.id); break;
@@ -768,7 +768,28 @@ export default { async fetch(request: Request, env: { SECRET: string }) {
 - **Rotation:** rotating the secret keeps the old one valid (default 24 hours): every request then carries two
   signatures, and `verifyWebhook` accepts either. Pass both secrets while you switch: `verifyWebhook(body, headers,
   [newSecret, oldSecret])`.
-- **Replay protection:** the timestamp must be within 5 minutes (`toleranceSeconds` to change).
+- **Replay protection:** the timestamp must be within 5 minutes (`toleranceSeconds` to change; it must be above 0 -
+  `0`, a negative number or `NaN` throws a `RangeError`, so the window cannot be switched off). The window stops an old
+  request being sent again; it does not stop a retry. Deduplicate by event id for that (below).
+- **Deduplicate by event id.** A retry, and a replay from the delivery log, carry the same `X-Webhook-Id` (= `event.id`).
+  Handle each id once. With several instances, or across restarts, keep the id in your database under a unique key:
+
+  ```ts
+  // Postgres: CREATE TABLE handled_webhooks (event_id text PRIMARY KEY, at timestamptz NOT NULL DEFAULT now());
+  const first = (await db.query(
+    'INSERT INTO handled_webhooks (event_id) VALUES ($1) ON CONFLICT DO NOTHING', [event.id])).rowCount === 1;
+  if (!first) return res.sendStatus(200);   // already handled: answer 2xx so it is not retried again
+  ```
+
+  For one process, `createWebhookDeduper()` remembers ids in memory (25 hours by default - longer than the 24 hours of
+  retries - and at most 100,000):
+
+  ```ts
+  import { createWebhookDeduper, verifyWebhook } from '@workstudio-inc/sdk/webhooks';
+  const dedupe = createWebhookDeduper();
+  const event = await verifyWebhook(rawBody, headers, secret);
+  if (!dedupe.firstTime(event)) return new Response('already handled');
+  ```
 - **Testing locally:** `signWebhook(body, secret)` returns the two headers a real request carries.
 
 ## Build
