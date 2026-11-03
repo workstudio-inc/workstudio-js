@@ -4,6 +4,17 @@
 file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is in
 `RELEASE-NOTES-sdk-contract-fixes.md`.
 
+## Unreleased (0.17.0)
+
+### Added
+- `AppNotReleased` (a `SignInRequired`, status 403, code `APP_NOT_RELEASED`, `reason: 'app_not_released'`): the
+  platform will not sign people into an App that has no released version yet. A refresh refused that way still
+  signs the person out, as before, but `auth.token()` now throws `AppNotReleased` instead of a plain
+  `SignInRequired`, `auth.completeSignIn()` throws it instead of a plain `AppError`, and `auth.onChange` listeners
+  get it as a second argument (`(who, why) => ...`) when the sign-out happened in the background (`auth.renew()`).
+  Its `message` is "This App isn't available yet." for the App to show. Code that handles `SignInRequired` keeps
+  working; every other refusal, and a released App's refresh, is unchanged.
+
 ## 0.16.0 - 2026-10-31
 
 ### Added

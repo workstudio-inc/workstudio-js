@@ -1,5 +1,5 @@
 import type { KeyValueStore, ResolvedConfig } from './config';
-import { AppError, SignInRequired } from './errors';
+import { AppError, AppNotReleased, SignInRequired } from './errors';
 import { refreshLock, type RefreshLock, type StorageLockOptions } from './refreshLock';
 
 /** Who is signed in. */
@@ -39,8 +39,11 @@ export interface RefreshTuning {
 
 const DEFAULT_RETRY: Required<RefreshRetry> = { attempts: 5, baseMs: 500, capMs: 8_000, maxRetryAfterMs: 30_000 };
 
-/** How a refresh ended: a token, signed out, or not reachable just now (still signed in). */
-type Refreshed = { token: string } | { signedOut: true } | { unavailable: AppError };
+/**
+ * How a refresh ended: a token, signed out (with why, when the platform said: {@link AppNotReleased}), or not reachable
+ * just now (still signed in).
+ */
+type Refreshed = { token: string } | { signedOut: true; why?: AppNotReleased } | { unavailable: AppError };
 
 interface RealmTokens {
   access_token: string;
@@ -134,7 +137,7 @@ export class Auth {
   private refreshingForced = false;
   /** Bumped by every sign-in and sign-out here, so a refresh that outlives one never writes over it. */
   private epoch = 0;
-  private readonly listeners = new Set<(who: SignedIn | null) => void>();
+  private readonly listeners = new Set<(who: SignedIn | null, why?: AppNotReleased) => void>();
   private readonly signingOut = new Set<() => Promise<void>>();
   private readonly retry: Required<RefreshRetry>;
   private readonly lock: RefreshLock;
@@ -180,9 +183,9 @@ export class Auth {
   }
 
   /** Store the sign-in, then hold it here and tell the listeners: nothing sees a token the store does not. */
-  private async save(who: SignedIn | null) {
+  private async save(who: SignedIn | null, why?: AppNotReleased) {
     await this.persist(who);
-    this.adopt(who);
+    this.adopt(who, why);
   }
 
   private async persist(who: SignedIn | null) {
@@ -194,12 +197,15 @@ export class Auth {
     }
   }
 
-  /** Hold `who` here - already in the store - and tell the listeners when it changed. */
-  private adopt(who: SignedIn | null) {
+  /**
+   * Hold `who` here - already in the store - and tell the listeners when it changed. `why` goes to them only when
+   * there is one, so a listener otherwise gets exactly the one argument it always did.
+   */
+  private adopt(who: SignedIn | null, why?: AppNotReleased) {
     const before = this.current;
     this.current = who;
     if (before?.platformToken !== who?.platformToken || (before === null) !== (who === null)) {
-      this.listeners.forEach(l => l(who));
+      this.listeners.forEach(l => (why ? l(who, why) : l(who)));
     }
   }
 
@@ -219,8 +225,12 @@ export class Auth {
     return this.current;
   }
 
-  /** Called whenever someone signs in or out, or their sign-in lapses. Returns an unsubscribe. */
-  onChange(listener: (who: SignedIn | null) => void): () => void {
+  /**
+   * Called whenever someone signs in or out, or their sign-in lapses. Returns an unsubscribe. When the platform signed
+   * the person out for a reason worth showing them, it comes as `why`: {@link AppNotReleased} (the App has not been
+   * released yet - show its `message` rather than only a sign-in button).
+   */
+  onChange(listener: (who: SignedIn | null, why?: AppNotReleased) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -349,6 +359,7 @@ export class Auth {
    * token held is returned while it still works, and after that the error says why
    * (`AppError`, status 0 and code `NETWORK` when offline).
    * @throws SignInRequired when nobody is signed in or the sign-in has lapsed
+   * @throws AppNotReleased (a SignInRequired) when the refresh was refused because the App has not been released yet
    */
   async token(): Promise<string> {
     if (this.config.platformToken) {
@@ -362,7 +373,7 @@ export class Auth {
     if (lasts(who)) return who.platformToken;
     const out = await this.refreshOnce(false);
     if ('token' in out) return out.token;
-    if ('signedOut' in out) throw new SignInRequired('Your sign-in has expired. Please sign in again.');
+    if ('signedOut' in out) throw out.why ?? new SignInRequired('Your sign-in has expired. Please sign in again.');
     // Not refreshed just now, but still signed in: the token held works until it expires.
     const held = this.current;
     if (held && held.platformTokenExpiresAt > Date.now()) return held.platformToken;
@@ -522,17 +533,19 @@ export class Auth {
       }
       if (phase === 'swap' && failed.status === 403 && failed.error === 'invalid_target') {
         // The platform no longer lets this person into the App: a sign-in that can never work. Unless
-        // another tab has just got a good token, end it.
+        // another tab has just got a good token, end it. When it says the App is not released yet
+        // (code APP_NOT_RELEASED), the sign-out says so too, for the App to tell the person.
         const latest = await this.reread();
         if (latest && latest.platformToken !== who.platformToken && lasts(latest)) {
           this.adopt(latest);
           return { token: latest.platformToken };
         }
+        const why = AppNotReleased.from(failed.status, failed.body) ?? undefined;
         if (epoch === this.epoch) {
           this.epoch++;
-          await this.save(null);
+          await this.save(null, why);
         }
-        return { signedOut: true };
+        return why ? { signedOut: true, why } : { signedOut: true };
       }
       const error = asError(failed, phase);
       if (!transient(failed.status) || attempt >= this.retry.attempts) return { unavailable: error };
@@ -581,6 +594,8 @@ export class Auth {
     const answer = await this.call(`${this.config.apiUrl}/api/v1/workflow/connection/oauth/token`, swapForm(tokens));
     if (!answer.ok || typeof answer.body.access_token !== 'string') {
       const failed = answer.ok ? undefined : answer;
+      const notReleased = failed && failed.error === 'invalid_target' ? AppNotReleased.from(failed.status, failed.body) : null;
+      if (notReleased) throw notReleased;
       throw new AppError(failed?.status ?? 502, failed?.description ?? 'You could not be signed in just now. Please try again.',
         failed?.code ?? failed?.error, failed?.body);
     }

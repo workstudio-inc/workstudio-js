@@ -367,7 +367,10 @@ await app.account.delete();
   being busy or down, never signs the person out: the refresh is retried, the token held is used while
   it lasts, and after that calls fail with `AppError` (`code: 'NETWORK'` when offline) until the
   connection is back. Only a refresh token the sign-in service no longer accepts ends the sign-in
-  (`SignInRequired`).
+  (`SignInRequired`) - or the platform refusing the person in the App. When it refuses because the App has not
+  been released yet, that is `AppNotReleased` (a `SignInRequired` with `code: 'APP_NOT_RELEASED'`), thrown and
+  passed to `auth.onChange` as its second argument: show its message ("This App isn't available yet.") rather
+  than only a sign-in button.
 - **What the App sets up on the platform**: its agents (bundled with the App), its data collections
   (`dataCollections` in its end-user access), its content packs (`contentReferences`, pinned when
   an App version is approved), the monthly AI allowance per person (with none set, the platform's default of $5 a

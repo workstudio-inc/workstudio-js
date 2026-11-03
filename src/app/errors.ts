@@ -39,10 +39,36 @@ export class VersionMismatchError extends AppError {
 
 /** Nobody is signed in, or their sign-in has lapsed: call `auth.signIn()`. */
 export class SignInRequired extends AppError {
-  constructor(message = 'Please sign in.') {
-    super(401, message, 'SIGN_IN_REQUIRED');
+  /** `status`, `code` and `details` are for the sign-outs that say why ({@link AppNotReleased}); else 401 SIGN_IN_REQUIRED. */
+  constructor(message = 'Please sign in.', status = 401, code = 'SIGN_IN_REQUIRED', details?: Record<string, unknown>) {
+    super(status, message, code, details);
     this.name = 'SignInRequired';
     Object.setPrototypeOf(this, SignInRequired.prototype);
+  }
+}
+
+/**
+ * The App has not been released yet (403 `invalid_target`, code `APP_NOT_RELEASED`, 0.17.0): its publisher has no
+ * approved version of it, so the platform will not sign people into it. The person is signed out, as for any refusal
+ * of the sign-in - it is a {@link SignInRequired}, so code that handles that still works - but signing in again will
+ * not help until the App is released. Show `message` ("This App isn't available yet.") rather than a sign-in button.
+ * Thrown by `auth.token()` (a refresh) and `auth.completeSignIn()` (a first sign-in); a sign-out in the background
+ * (`auth.renew()`) passes it to `auth.onChange` listeners as their second argument. `details` is the refusal as it
+ * came; its `error_description` is written for the App's publisher, not for the person.
+ */
+export class AppNotReleased extends SignInRequired {
+  readonly reason = 'app_not_released' as const;
+
+  constructor(message = 'This App isn’t available yet.', details?: Record<string, unknown>) {
+    super(message, 403, 'APP_NOT_RELEASED', details);
+    this.name = 'AppNotReleased';
+    Object.setPrototypeOf(this, AppNotReleased.prototype);
+  }
+
+  /** The refusal a token swap's answer carries (403, code `APP_NOT_RELEASED`), or null when it is not one. */
+  static from(status: number, body: Record<string, unknown> | undefined | null): AppNotReleased | null {
+    if (status !== 403 || !body || body.code !== 'APP_NOT_RELEASED') return null;
+    return new AppNotReleased(undefined, body);
   }
 }
 

@@ -130,7 +130,7 @@ export type { DesignRun, DesignRunCloseResult } from './designRuns';
 export { DESIGN_RUN_CODES, DesignRunRefused, isDesignRunCode } from './errors';
 export type { DesignRunCode } from './errors';
 export type { AppConfig, KeyValueStore } from './config';
-export { AiPaused, AllowanceUsed, AppError, CreditsUsedUp, NotForYourPlan, SignInRequired, VersionMismatchError } from './errors';
+export { AiPaused, AllowanceUsed, AppError, AppNotReleased, CreditsUsedUp, NotForYourPlan, SignInRequired, VersionMismatchError } from './errors';
 export type { AiPausedReason } from './errors';
 export { Listings } from './listings';
 export type { Listing, ListingCard, ListingContact, ListingInput, ListingLocation, ListingNotSearchableReason, NearOptions, NearResult } from './listings';
