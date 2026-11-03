@@ -750,6 +750,76 @@ const again = await app.workflows.get(runs[0].id);   // output is on get, never 
   | 429 | `APP_AI_PAUSED` / `APP_FREE_POOL_PAUSED` | thrown as `AiPaused` (see above) |
   | 503 | `UNAVAILABLE` | try again |
 
+## App event webhooks: verify them on your backend (`@workstudio-inc/sdk/webhooks`)
+
+Since 0.17.0.
+
+An App's publisher can have its events sent to their own systems - their backend, Zapier, an App function. Add an
+endpoint in the designer (App > Webhooks), in the manifest (`webhooks:`), or with the catalog API
+(`POST /api/v1/workflow/catalog/integrations/{id}/end-user-access/webhooks`). The signing secret is shown once.
+
+Every request is a POST of JSON, signed the way every work.studio webhook is: `X-Webhook-Signature: sha256=<hex>` is the
+HMAC-SHA256 of `<X-Webhook-Timestamp>.<raw body>` keyed with your secret. Check it with `verifyWebhook` - Node 18+,
+Deno, Bun and Cloudflare Workers (it uses Web Crypto):
+
+```ts
+import { verifyWebhook, WebhookVerificationError } from '@workstudio-inc/sdk/webhooks';
+
+// Express: read the RAW body - a parsed and re-serialised body never verifies.
+app.post('/hooks/workstudio', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const event = await verifyWebhook(req.body, req.headers, process.env.WORKSTUDIO_WEBHOOK_SECRET!);
+    if (await seen(event.id)) return res.sendStatus(200);      // at-least-once: de-duplicate by id
+    switch (event.type) {
+      case 'person.signed_up': await addContact(event.data.person.email); break;
+      case 'person.deleted':   await forget(event.data.person.id); break;
+      case 'plan.started':     await grant(event.data.person.id, event.data.plan.id); break;
+      case 'record.created':   await sync(event.data.collection, event.data.record.id); break;
+    }
+    res.sendStatus(200);                                        // any 2xx within 10 s is "delivered"
+  } catch (e) {
+    res.sendStatus(e instanceof WebhookVerificationError ? 401 : 500);
+  }
+});
+
+// A Worker or App function:
+export default { async fetch(request: Request, env: { SECRET: string }) {
+  const event = await verifyWebhook(await request.text(), request.headers, env.SECRET);
+  return new Response('ok');
+} };
+```
+
+- **Headers:** `X-Webhook-Id` (the event's idempotency id: the same on every retry and replay), `X-Webhook-Event` (the
+  type), `X-Webhook-Delivery` (this delivery), `X-Webhook-Attempt`, `X-Webhook-Timestamp`, `X-Webhook-Signature`,
+  `Idempotency-Key` (= `X-Webhook-Id`).
+- **Body:** `{ id, type, version, createdAt, sequence, app: { id, environmentId }, test, data }`; the types of every
+  event are exported (`AppWebhookEvent`, narrowed on `type`, and `APP_WEBHOOK_EVENT_TYPES`).
+- **Events:** `person.signed_up` (id, email, name, sign-in method - what your People view shows), `person.deleted` (id
+  only: delete what you keep), `plan.started | changed | cancelled | renewed | payment_failed`, `credits.purchased`,
+  `invite.redeemed`, `record.created | updated | deleted` (for collections you opt in: the record id and the NAMES of
+  the fields written, never values - read the record with your own credentials), `app.event` (your App's own events:
+  only their `number` and `choice` fields), `app.workflow.run.finished` (a run one of your people started from the App
+  ended: `runId`, `workflowId`, `workflowKey`, `status` FINISHED / FAILED / CANCELLED / TERMINATED, `finishedAt`,
+  `person.id`; never its input, output or error), `deployment.live`, `usage.limit_reached`, and `webhook.test`.
+- **At least once, except:** `record.*` events are best-effort in v1 (they wait in an in-memory queue in the data
+  service; a restart or overload can drop some, and work.studio counts what it drops) - treat them as a hint and
+  reconcile by reading the collection. `deployment.live` and `usage.limit_reached` are handed over right after the
+  change (tried three times), not in its transaction. `plan.*` events come from comparing the plan a person now has with
+  the one last seen, written together with that comparison; when a plan change was saved on its own (checkout, store
+  notices, sweeps) and the platform stopped before the comparison, the change is reported at the person's next plan
+  update. `app.workflow.run.finished` is written with the run's ended status, which work.studio notices when the person
+  reads the run or, within about a minute or two, by itself (for runs up to 7 days old). Every other event is written in
+  the same transaction as the change that raised it.
+- **Delivery:** at least once. Retried with backoff (30 s doubling to 2 h) for 24 hours on anything but a 2xx; a 410
+  switches the endpoint off. After 20 failures in a row (about a day) the endpoint is switched off and the App's owners
+  are emailed; events are held for 7 days and sent, oldest first, when you turn it back on. First attempts leave in
+  order, but a retried event can arrive after a later one: order by `sequence`. Redirects are not followed.
+- **Rotation:** rotating the secret keeps the old one valid (default 24 hours): every request then carries two
+  signatures, and `verifyWebhook` accepts either. Pass both secrets while you switch: `verifyWebhook(body, headers,
+  [newSecret, oldSecret])`.
+- **Replay protection:** the timestamp must be within 5 minutes (`toleranceSeconds` to change).
+- **Testing locally:** `signWebhook(body, secret)` returns the two headers a real request carries.
+
 ## Build
 
 ```
