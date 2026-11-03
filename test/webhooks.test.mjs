@@ -1,7 +1,8 @@
 // `npm test` builds first, then runs node's own test runner against the built package.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { verifyWebhook, signWebhook, WebhookVerificationError, APP_WEBHOOK_EVENT_TYPES } from '../dist/webhooks.js';
+import * as webhooks from '../dist/webhooks.js';
+const { verifyWebhook, signWebhook, WebhookVerificationError, APP_WEBHOOK_EVENT_TYPES } = webhooks;
 
 const BODY = '{"id":"e1","type":"person.deleted"}';
 const TS = 1761480000;
@@ -65,4 +66,40 @@ test('the event types are the catalogue', () => {
   assert.ok(APP_WEBHOOK_EVENT_TYPES.includes('record.updated'));
   assert.ok(!APP_WEBHOOK_EVENT_TYPES.includes('webhook.test'));
   assert.equal(APP_WEBHOOK_EVENT_TYPES.length, 15);
+});
+
+test('toleranceSeconds 0, negative or not a number is refused: the replay window cannot be switched off', async () => {
+  const headers = { 'X-Webhook-Timestamp': String(TS), 'X-Webhook-Signature': NEW };
+  for (const toleranceSeconds of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await assert.rejects(verifyWebhook(BODY, headers, 'whsec_test', { now: () => TS + 100000, toleranceSeconds }), RangeError,
+      'toleranceSeconds ' + toleranceSeconds);
+  }
+  // A valid window still works, and an old request is still a replay.
+  await verifyWebhook(BODY, headers, 'whsec_test', { now: () => TS + 1, toleranceSeconds: 1 });
+  await refused(verifyWebhook(BODY, headers, 'whsec_test', { now: () => TS + 2, toleranceSeconds: 1 }), 'STALE_TIMESTAMP');
+});
+
+test('createWebhookDeduper: the same event id is handled once, a retry or a replay of it is not', () => {
+  assert.equal(typeof webhooks.createWebhookDeduper, 'function');
+  let t = 1000;
+  const dedupe = webhooks.createWebhookDeduper({ ttlSeconds: 60, maxEntries: 2, now: () => t });
+  assert.equal(dedupe.firstTime('e1'), true);
+  assert.equal(dedupe.firstTime('e1'), false, 'a retry of the same event');
+  assert.equal(dedupe.firstTime({ id: 'e2', type: 'person.deleted' }), true, 'an event object is read by its id');
+  assert.equal(dedupe.firstTime({ id: 'e2' }), false);
+  t += 61;
+  assert.equal(dedupe.firstTime('e1'), true, 'forgotten after ttlSeconds');
+  dedupe.firstTime('e3');
+  dedupe.firstTime('e4');
+  assert.ok(dedupe.size() <= 2, 'bounded by maxEntries');
+  assert.throws(() => dedupe.firstTime(''), TypeError);
+});
+
+test('createWebhookDeduper: by default it remembers longer than the platform retries (24 h)', () => {
+  let t = 0;
+  const dedupe = webhooks.createWebhookDeduper({ now: () => t });
+  dedupe.firstTime('e1');
+  t += 24 * 3600 + 60;
+  assert.equal(dedupe.firstTime('e1'), false);
+  assert.throws(() => webhooks.createWebhookDeduper({ ttlSeconds: 0 }), RangeError);
 });
