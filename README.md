@@ -506,8 +506,9 @@ else if (where?.kind === 'stripe_portal') await app.billing.manage();
   - `AppError` with `STORE_PURCHASE_INVALID`, `UNKNOWN_PRODUCT` or `NO_PURCHASE` otherwise.
 - **Deleting the account**: call `app.account.deletionCheck()` first. With `appleSubscription`, tell the
   person Apple keeps billing until they cancel in the App Store, and offer
-  `billing.store.manage(sub.manage)`, then delete if they confirm (Apple guideline 5.1.1(v)). The
-  platform cancels Google Play subscriptions on deletion.
+  `billing.store.manage(sub.manage)`, then delete if they confirm (Apple guideline 5.1.1(v)). With
+  `googleSubscription`, tell them to cancel it in Google Play too: the platform tries when the account
+  is deleted, but that can fail, and then nothing tries again.
 
 ### Shared projects: an owner and a client on one piece of work
 

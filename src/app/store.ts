@@ -181,14 +181,18 @@ export interface StoreSubscriptionSummary {
   expiresAt?: string;
   autoRenew: boolean;
   manage?: ManageLink;
-  /** Google: the platform cancels it when the account is deleted. Apple: it cannot - the person must, in the App Store. */
+  /**
+   * Google: the platform tries to cancel it when the account is deleted, and that can fail, so tell the person to cancel it
+   * in Google Play too. Apple: it cannot - the person must, in the App Store.
+   */
   cancelledByServerOnDeletion: boolean;
 }
 
 /**
  * Before deleting the account (Apple guideline 5.1.1(v)). With `appleSubscription`, tell the person Apple
  * keeps billing until they cancel in the App Store, offer its manage link (`billing.store.manage(sub.manage)`),
- * then delete at once if they confirm. Google subscriptions are cancelled by the platform on deletion.
+ * then delete at once if they confirm. With `googleSubscription`, tell them to cancel it in Google Play too: the platform
+ * tries on deletion, but that can fail.
  */
 export interface DeletionCheck {
   storeSubscriptions: StoreSubscriptionSummary[];
