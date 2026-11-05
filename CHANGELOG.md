@@ -4,6 +4,13 @@
 file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is in
 `RELEASE-NOTES-sdk-contract-fixes.md`.
 
+## 0.16.1 - 2026-11-05
+
+### Changed
+- Docs only: `Account.deletionCheck`, `Account.delete`, `DeletionCheck` and the README no longer say the platform cancels
+  a Google Play subscription for the App. It tries when the account is deleted, and that can fail with nothing trying
+  again, so tell the person to cancel it in Google Play too, as for the App Store. No code change.
+
 ## 0.16.0 - 2026-10-31
 
 ### Added
