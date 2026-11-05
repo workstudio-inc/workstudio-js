@@ -447,10 +447,11 @@ export class Auth {
 
   /**
    * Refresh with the refresh token, then swap the new sign-in token for a platform token. Signs out only
-   * when the sign-in service says the refresh token is no good (400 invalid_grant) and the store holds
-   * no newer one, or the platform refuses the person in this App (403 invalid_target from the swap) and
-   * no other tab has a good token; network failures, timeouts, 429 and 5xx are retried with capped,
-   * jittered backoff.
+   * when the sign-in service says the refresh token is no good (400 invalid_grant, or 400 invalid_scope on the
+   * refresh: the person's consent for this App is gone, and only their yes on the hosted page brings it back) and
+   * the store holds no newer one, or the platform refuses the person in this App (403 invalid_target from the swap)
+   * and no other tab has a good token; network failures, timeouts, 429 and 5xx are retried with capped, jittered
+   * backoff.
    */
   private async refreshWith(start: SignedIn, epoch: number): Promise<Refreshed> {
     let who = start;
@@ -499,7 +500,8 @@ export class Auth {
         failed = refreshed as Failed;
       }
 
-      if (failed.status === 400 && failed.error === 'invalid_grant') {
+      const refreshDead = phase === 'refresh' && failed.error === 'invalid_scope';
+      if (failed.status === 400 && (failed.error === 'invalid_grant' || refreshDead)) {
         if (phase === 'refresh') {
           // Dead - unless another tab rotated it after this one read the store: then use theirs.
           const latest = await this.reread();

@@ -297,6 +297,31 @@ describe('auth refresh: failures', () => {
     assert.equal(await auth.signedIn(), null);
   });
 
+  it('400 invalid_scope on the refresh signs out: consent is gone, and only the hosted page brings it back', async () => {
+    const store = syncStore();
+    seed(store);
+    // Keycloak's exact answer when a client requires consent and this person has not given it.
+    const { fetch, calls } = backend({ realm: () => json(400, { error: 'invalid_scope', error_description: 'Client no longer has requested consent from user' }) });
+    const auth = tab(store, fetch);
+    const changes = [];
+    auth.onChange(who => changes.push(who));
+    await assert.rejects(auth.token(), SignInRequired);
+    assert.equal(await auth.signedIn(), null);
+    assert.equal(held(store), null);
+    assert.equal(calls.realm.length, 1, 'never retried');
+    assert.deepEqual(changes, [null], 'the App is told, so it can show sign-in');
+  });
+
+  it('invalid_scope from the swap is not a dead refresh token: the sign-in is kept', async () => {
+    const store = syncStore();
+    seed(store);
+    const { fetch } = backend({ swap: () => json(400, { error: 'invalid_scope' }) });
+    const auth = tab(store, fetch);
+    const held0 = held(store).platformToken;
+    assert.equal(await auth.token(), held0, 'the token held still works');
+    assert.notEqual(await auth.signedIn(), null);
+  });
+
   it('invalid_grant after another tab rotated the refresh token: uses theirs, does not sign out', async () => {
     const store = asyncStore();
     seed(store);
