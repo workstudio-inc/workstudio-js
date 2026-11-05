@@ -312,6 +312,41 @@ describe('auth refresh: failures', () => {
     assert.deepEqual(changes, [null], 'the App is told, so it can show sign-in');
   });
 
+  it('401 invalid_client on the refresh signs out: the App was turned off, and retrying cannot help', async () => {
+    const store = syncStore();
+    seed(store);
+    // Keycloak's answer when the App's sign-in client has been switched off.
+    const { fetch, calls } = backend({ realm: () => json(401, { error: 'invalid_client', error_description: 'Invalid client or Invalid client credentials' }) });
+    const auth = tab(store, fetch);
+    const changes = [];
+    auth.onChange(who => changes.push(who));
+    await assert.rejects(auth.token(), SignInRequired);
+    assert.equal(await auth.signedIn(), null);
+    assert.equal(held(store), null);
+    assert.equal(calls.realm.length, 1, 'never retried');
+    assert.deepEqual(changes, [null], 'the App is told, so it can show sign-in');
+  });
+
+  it('a 401 on the refresh that is not invalid_client does not sign out: it says nothing about the sign-in', async () => {
+    const store = syncStore();
+    seed(store);
+    const { fetch } = backend({ realm: () => json(401, { error: 'unauthorized_client' }) });
+    const auth = tab(store, fetch);
+    const held0 = held(store).platformToken;
+    assert.equal(await auth.token(), held0, 'the token held still works');
+    assert.notEqual(await auth.signedIn(), null);
+  });
+
+  it('invalid_client from the swap is not a dead refresh token: the sign-in is kept', async () => {
+    const store = syncStore();
+    seed(store);
+    const { fetch } = backend({ swap: () => json(401, { error: 'invalid_client' }) });
+    const auth = tab(store, fetch);
+    const held0 = held(store).platformToken;
+    assert.equal(await auth.token(), held0, 'the token held still works');
+    assert.notEqual(await auth.signedIn(), null);
+  });
+
   it('invalid_scope from the swap is not a dead refresh token: the sign-in is kept', async () => {
     const store = syncStore();
     seed(store);
