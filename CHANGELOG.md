@@ -4,6 +4,16 @@
 file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is in
 `RELEASE-NOTES-sdk-contract-fixes.md`.
 
+## Unreleased
+
+### Fixed
+- A refresh answered `400 invalid_scope` now ends the sign-in, as `400 invalid_grant` does: `auth.token()` throws
+  `SignInRequired` and `onChange` fires with `null`, so the App shows sign-in. Keycloak answers this when an App's sign-in
+  requires consent and the person has not given it, or has taken it back. Before, the person stayed "signed in" with every
+  call failing and nothing asking them to sign in again.
+- A refresh answered `401 invalid_client` now ends the sign-in the same way. Keycloak answers this when the App's sign-in has
+  been turned off; before, the person was left in the same stuck state.
+
 ## 0.16.1 - 2026-11-05
 
 ### Changed
