@@ -4,7 +4,7 @@
 file starts with 0.15.0. The full audit (routes, DTOs, history of each break) is in
 `RELEASE-NOTES-sdk-contract-fixes.md`.
 
-## Unreleased
+## 0.16.2 - 2026-11-09
 
 ### Fixed
 - A refresh answered `400 invalid_scope` now ends the sign-in, as `400 invalid_grant` does: `auth.token()` throws
